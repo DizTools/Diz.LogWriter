@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using Diz.Core.export;
+using Diz.Core.Interfaces;
 using Diz.Core.model;
 
 namespace Diz.LogWriter
