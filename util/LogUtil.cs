@@ -26,7 +26,12 @@ namespace Diz.LogWriter.util
                     OutputToString = true,
                     RomSizeOverride = sampleRomData.OriginalRomSizeBeforePadding,
                 },
+                // TODO
+                #if DIZ_3_BRANCH
+                Data = sampleRomData.Data,
+                #else
                 Data = sampleRomData,
+                #endif
             };
             
             return lc.CreateLog();
