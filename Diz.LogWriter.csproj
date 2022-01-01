@@ -12,6 +12,7 @@
     
     <ItemGroup>
       <ProjectReference Include="..\Diz.Core\Diz.Core.csproj" />
+      <ProjectReference Include="..\Diz.Cpu.65816\Diz.Cpu.65816.csproj" />
     </ItemGroup>
 
     <ItemGroup>

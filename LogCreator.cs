@@ -2,13 +2,15 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using Diz.Core.export;
+using Diz.Core.Interfaces;
+using Diz.LogWriter.util;
 
 namespace Diz.LogWriter
 {
     public class LogCreator : ILogCreatorForGenerator
     {
         public LogWriterSettings Settings { get; set; }
-        public ILogCreatorDataSource Data { get; init; }
+        public ILogCreatorDataSource<IData> Data { get; init; }
         private LogCreatorOutput Output { get; set; }
         public LineGenerator LineGenerator { get; private set; }
         public LabelTracker LabelTracker { get; private set; }

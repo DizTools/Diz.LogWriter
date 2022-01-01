@@ -310,7 +310,17 @@
         }
       },
       "diz.core.interfaces": {
-        "type": "Project"
+        "type": "Project",
+        "dependencies": {
+          "IX.Observable": "0.7.3"
+        }
+      },
+      "diz.cpu.65816": {
+        "type": "Project",
+        "dependencies": {
+          "Diz.Core": "3.0.0",
+          "Diz.Core.Interfaces": "1.0.0"
+        }
       }
     }
   }

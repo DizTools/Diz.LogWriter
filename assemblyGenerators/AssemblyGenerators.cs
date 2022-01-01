@@ -1,5 +1,7 @@
-﻿using Diz.Core.model;
+﻿using System;
+using Diz.Core.model;
 using Diz.Core.util;
+using Diz.Cpu._65816;
 
 namespace Diz.LogWriter.assemblyGenerators
 {
@@ -76,7 +78,11 @@ namespace Diz.LogWriter.assemblyGenerators
             var bytes = LogCreator.GetLineByteLength(offset);
             var code = "";
 
-            switch (Data.GetFlag(offset))
+            var snesApi = Data.Data.GetSnesApi();
+            if (snesApi == null)
+                throw new NullReferenceException("SnesApi not present, can't generate line");
+
+            switch (snesApi.GetFlag(offset))
             {
                 case FlagType.Opcode:
                     code = Data.GetInstruction(offset);
@@ -87,25 +93,25 @@ namespace Diz.LogWriter.assemblyGenerators
                 case FlagType.Graphics:
                 case FlagType.Music:
                 case FlagType.Empty:
-                    code = Data.GetFormattedBytes(offset, 1, bytes);
+                    code = snesApi.GetFormattedBytes(offset, 1, bytes);
                     break;
                 case FlagType.Data16Bit:
-                    code = Data.GetFormattedBytes(offset, 2, bytes);
+                    code = snesApi.GetFormattedBytes(offset, 2, bytes);
                     break;
                 case FlagType.Data24Bit:
-                    code = Data.GetFormattedBytes(offset, 3, bytes);
+                    code = snesApi.GetFormattedBytes(offset, 3, bytes);
                     break;
                 case FlagType.Data32Bit:
-                    code = Data.GetFormattedBytes(offset, 4, bytes);
+                    code = snesApi.GetFormattedBytes(offset, 4, bytes);
                     break;
                 case FlagType.Pointer16Bit:
-                    code = Data.GeneratePointerStr(offset, 2);
+                    code = snesApi.GeneratePointerStr(offset, 2);
                     break;
                 case FlagType.Pointer24Bit:
-                    code = Data.GeneratePointerStr(offset, 3);
+                    code = snesApi.GeneratePointerStr(offset, 3);
                     break;
                 case FlagType.Pointer32Bit:
-                    code = Data.GeneratePointerStr(offset, 4);
+                    code = snesApi.GeneratePointerStr(offset, 4);
                     break;
                 case FlagType.Text:
                     // note: this won't always respect the line length because it can generate, on the same line, multiple strings, etc.
@@ -268,7 +274,7 @@ namespace Diz.LogWriter.assemblyGenerators
 
         private string BuildByteString(int offset)
         {
-            if (Data.GetFlag(offset) != FlagType.Opcode) 
+            if (SnesApi.GetFlag(offset) != FlagType.Opcode) 
                 return "";
             
             var bytes = "";
@@ -306,7 +312,7 @@ namespace Diz.LogWriter.assemblyGenerators
         }
         protected override string Generate(int offset, int length)
         {
-            return Util.NumberToBaseString(Data.GetDataBank(offset), Util.NumberBase.Hexadecimal, 2);
+            return Util.NumberToBaseString(SnesApi.GetDataBank(offset), Util.NumberBase.Hexadecimal, 2);
         }
     }
     
@@ -319,7 +325,7 @@ namespace Diz.LogWriter.assemblyGenerators
         }
         protected override string Generate(int offset, int length)
         {
-            return Util.NumberToBaseString(Data.GetDirectPage(offset), Util.NumberBase.Hexadecimal, 4);
+            return Util.NumberToBaseString(SnesApi.GetDirectPage(offset), Util.NumberBase.Hexadecimal, 4);
         }
     }
     
@@ -332,7 +338,7 @@ namespace Diz.LogWriter.assemblyGenerators
         }
         protected override string Generate(int offset, int length)
         {
-            var m = Data.GetMFlag(offset);
+            var m = SnesApi.GetMFlag(offset);
             if (length == 1) 
                 return m ? "M" : "m";
         
@@ -349,7 +355,7 @@ namespace Diz.LogWriter.assemblyGenerators
         }
         protected override string Generate(int offset, int length)
         {
-            var x = Data.GetXFlag(offset);
+            var x = SnesApi.GetXFlag(offset);
             if (length == 1) 
                 return x ? "X" : "x";
         

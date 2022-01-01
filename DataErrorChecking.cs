@@ -1,7 +1,9 @@
 ﻿using System;
-using Diz.Core.export;
+using Diz.Core.Interfaces;
 using Diz.Core.model;
 using Diz.Core.util;
+using Diz.Cpu._65816;
+using Diz.LogWriter.util;
 
 namespace Diz.LogWriter
 {
@@ -12,7 +14,9 @@ namespace Diz.LogWriter
             public int Offset { get; init; }
             public string Msg { get; init; }
         }
-        public ILogCreatorDataSource Data { get; init; }
+        public ILogCreatorDataSource<IData> Data { get; init; }
+
+        protected ISnesApi<IData> SnesApi => Data.Data.GetSnesApi();
 
         public event EventHandler<DataErrorInfo> ErrorNotifier;
 
@@ -21,13 +25,13 @@ namespace Diz.LogWriter
 
         private void ErrorIfOperand(int offset)
         {
-            if (Data.GetFlag(offset) == FlagType.Operand)
+            if (SnesApi.GetFlag(offset) == FlagType.Operand)
                 ReportError(offset, "Bytes marked as operands formatted as Data.");
         }
 
         private void ErrorIfAdjacentOperandsSeemWrong(int startingOffset)
         {
-            var flag = Data.GetFlag(startingOffset);
+            var flag = SnesApi.GetFlag(startingOffset);
             if (flag != FlagType.Operand)
                 return;
 
@@ -49,7 +53,7 @@ namespace Diz.LogWriter
         
         private FlagType GetFlagButSwapOpcodeForOperand(int offset)
         {
-            var flag = Data.GetFlag(offset);
+            var flag = SnesApi.GetFlag(offset);
             return flag == FlagType.Opcode ? FlagType.Operand : flag;
         }
 
@@ -75,11 +79,11 @@ namespace Diz.LogWriter
             if (!IsOffsetInRange(nextOffset))
                 return false;
 
-            if (Data.GetFlag(nextOffset) == expectedFlag)
+            if (SnesApi.GetFlag(nextOffset) == expectedFlag)
                 return true;
 
             var expectedFlagName = Util.GetEnumDescription(expectedFlag);
-            var actualFlagName = Util.GetEnumDescription(Data.GetFlag(nextOffset));
+            var actualFlagName = Util.GetEnumDescription(SnesApi.GetFlag(nextOffset));
             var msg = $"Expected {expectedFlagName}, but got {actualFlagName} instead.";
             ReportError(nextOffset, msg);
             return false;
@@ -87,12 +91,12 @@ namespace Diz.LogWriter
 
         private bool DoesIndirectAddressPointToOpcode(int ia)
         {
-            return Data.GetFlag(Data.ConvertSnesToPc(ia)) == FlagType.Opcode;
+            return SnesApi.GetFlag(Data.ConvertSnesToPc(ia)) == FlagType.Opcode;
         }
 
         private bool IsOpcodeOutboundJump(int offset)
         {
-            return Data.GetFlag(offset) == FlagType.Opcode &&
+            return SnesApi.GetFlag(offset) == FlagType.Opcode &&
                    Data.GetInOutPoint(offset) == InOutPoint.OutPoint;
         }
 
