@@ -1,34 +1,51 @@
-﻿using Diz.Core.export;
-using Diz.Cpu._65816;
+﻿using Diz.Core;
+using Diz.Core.export;
+using Diz.Core.model.snes;
 
 namespace Diz.LogWriter.util;
 
-public static class LogUtil
+public class SampleAssemblyTextGenerator : ISampleAssemblyTextGenerator
 {
+    private readonly ISampleDataFactory sampleDataFactory;
+    private readonly LogWriterSettings settings;
+
+    public SampleAssemblyTextGenerator(ISampleDataFactory sampleDataFactory, LogWriterSettings settings)
+    {
+        this.sampleDataFactory = sampleDataFactory;
+        this.settings = settings;
+    }
+
     /// <summary>
     /// Generate a sample of assembly output with the given settings
     /// </summary>
-    /// <param name="baseSettings">Existing settings to base this generation on</param>
     /// <returns>Output of assembly generation as text</returns>
     /// <remarks>
     /// This is handy for UI and other areas where you want to quickly demo what the effect
     /// will be of various setting changes. We'll use a built-in sample ROM as our data source.
     /// </remarks>
-    public static LogCreatorOutput.OutputResult GetSampleAssemblyOutput(LogWriterSettings baseSettings)
+    public LogCreatorOutput.OutputResult GetSampleAssemblyOutput()
     {
-        var sampleRomData = SampleRomData.CreateSampleData();
+        var data = sampleDataFactory.Create();
+
+        var originalRomSizeBeforePadding = data.Tags.Get<SampleDataGenerationTag>();
+        
         var lc = new LogCreator
         {
-            Settings = baseSettings with
+            Settings = settings with
             {
                 Structure = LogWriterSettings.FormatStructure.SingleFile,
                 FileOrFolderOutPath = "",
                 OutputToString = true,
-                RomSizeOverride = sampleRomData.originalRomSizeBeforePadding,
+                RomSizeOverride = originalRomSizeBeforePadding.OriginalRomSizeBeforePadding
             },
-            Data = new LogCreatorByteSource(sampleRomData.data)
+            Data = new LogCreatorByteSource(data)
         };
             
         return lc.CreateLog();
     }
+}
+
+public interface ISampleAssemblyTextGenerator
+{
+    LogCreatorOutput.OutputResult GetSampleAssemblyOutput();
 }

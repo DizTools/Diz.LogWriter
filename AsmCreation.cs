@@ -1,5 +1,4 @@
-﻿using Diz.Core.export;
-using Diz.Core.Interfaces;
+﻿using Diz.Core.Interfaces;
 using Diz.LogWriter.util;
 
 namespace Diz.LogWriter

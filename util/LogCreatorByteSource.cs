@@ -1,7 +1,5 @@
-﻿using Diz.Core.export;
-using Diz.Core.Interfaces;
+﻿using Diz.Core.Interfaces;
 using Diz.Core.model;
-using Diz.Core.model.snes;
 using Diz.Cpu._65816;
 
 namespace Diz.LogWriter.util;
