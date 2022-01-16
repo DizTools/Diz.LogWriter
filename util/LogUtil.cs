@@ -1,9 +1,11 @@
 ﻿using Diz.Core;
 using Diz.Core.export;
 using Diz.Core.model.snes;
+using JetBrains.Annotations;
 
 namespace Diz.LogWriter.util;
 
+[UsedImplicitly]
 public class SampleAssemblyTextGenerator : ISampleAssemblyTextGenerator
 {
     private readonly ISampleDataFactory sampleDataFactory;
