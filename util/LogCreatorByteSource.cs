@@ -41,6 +41,8 @@ public class LogCreatorByteSource : ILogCreatorDataSource<IData>
     public int ConvertSnesToPc(int offset) => SnesApi.ConvertSnesToPc(offset);
     public int GetIntermediateAddressOrPointer(int offset) => SnesApi.GetIntermediateAddressOrPointer(offset);
     public int GetIntermediateAddress(int offset, bool resolve = false) => SnesApi.GetIntermediateAddress(offset, resolve);
+    public bool IsMatchingIntermediateAddress(int intermediateAddress, int addressToMatch) => SnesApi.IsMatchingIntermediateAddress(intermediateAddress, addressToMatch);
+
     public int GetRomSize() => SnesApi.GetRomSize();
     public int GetBankSize() => SnesApi.GetBankSize();
     public InOutPoint GetInOutPoint(int offset) => SnesApi.GetInOutPoint(offset);
