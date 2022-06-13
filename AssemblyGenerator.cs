@@ -1,6 +1,9 @@
 ﻿using System.Diagnostics;
 using System.IO;
 using Diz.Core.export;
+using Diz.Core.Interfaces;
+using Diz.Cpu._65816;
+using Diz.LogWriter.util;
 
 // ReSharper disable ParameterOnlyUsedForPreconditionCheck.Global
 
@@ -14,7 +17,7 @@ namespace Diz.LogWriter
     public interface ILogCreatorForGenerator
     { 
         public LogWriterSettings Settings { get; }
-        ILogCreatorDataSource Data { get; }
+        ILogCreatorDataSource<IData> Data { get; }
         void OnLabelVisited(int snesAddress);
 
         int GetLineByteLength(int offset);
@@ -23,8 +26,10 @@ namespace Diz.LogWriter
     public abstract class AssemblyPartialLineGenerator : IAssemblyPartialGenerator
     {
         public ILogCreatorForGenerator LogCreator { get; set; }
-        protected ILogCreatorDataSource Data => LogCreator.Data;
         
+        protected ILogCreatorDataSource<IData> Data => LogCreator.Data;
+        protected ISnesApi<IData> SnesApi => Data.Data.GetSnesApi();
+
         public string Token { get; init; } = "";
         public int DefaultLength { get; init; }
         public bool RequiresToken { get; init; } = true;

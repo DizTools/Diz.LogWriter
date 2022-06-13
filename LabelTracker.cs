@@ -1,7 +1,6 @@
 ﻿using System.Collections.Generic;
-using Diz.Core.export;
 using Diz.Core.Interfaces;
-using Diz.Core.model;
+using Diz.LogWriter.util;
 
 namespace Diz.LogWriter
 {
@@ -9,7 +8,7 @@ namespace Diz.LogWriter
     {
 
         private readonly ILogCreatorForGenerator logCreator;
-        public ILogCreatorDataSource Data => logCreator?.Data;
+        public ILogCreatorDataSource<IData> Data => logCreator?.Data;
         public List<int> VisitedLabelSnesAddresses { get; } = new();
         
         private Dictionary<int, IReadOnlyLabel> cachedUnvisitedLabels;

@@ -1,12 +1,13 @@
-﻿using Diz.Core.export;
+﻿using Diz.Core.Interfaces;
 using Diz.Core.util;
+using Diz.LogWriter.util;
 
 namespace Diz.LogWriter
 {
     public class AsmCreationBankManager
     {
         public LogCreator LogCreator { get; init; }
-        public ILogCreatorDataSource Data => LogCreator?.Data;
+        public ILogCreatorDataSource<IData> Data => LogCreator?.Data;
         public int CurrentBank { get; protected set; } = -1;
 
         public void SwitchBanksIfNeeded(int pointer)

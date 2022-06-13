@@ -1,14 +1,15 @@
 ﻿using System.Text;
-using System.Threading;
-using Diz.Core.export;
+using Diz.Core.Interfaces;
 using Diz.Core.model;
 using Diz.Core.util;
+using Diz.Cpu._65816;
+using Diz.LogWriter.util;
 
 namespace Diz.LogWriter
 {
     public static class LogCreatorExtensions
     {
-        public static string CreateAssemblyFormattedTextLine(this ILogCreatorDataSource data, int offset, int count)
+        public static string CreateAssemblyFormattedTextLine(this ILogCreatorDataSource<IData> data, int offset, int count)
         {
             var rawStr = new StringBuilder();
             for (var i = 0; i < count; i++)
@@ -83,10 +84,11 @@ namespace Diz.LogWriter
             return outputStr.ToString();
         }
         
-        public static int GetLineByteLength(this ILogCreatorDataSource data, int offset, int romSizeMax,
+        public static int GetLineByteLength(this ILogCreatorDataSource<IData> data, int offset, int romSizeMax,
             int countPerLine)
         {
-            var flagType = data.GetFlag(offset);
+            var snesApi = data.Data.GetSnesApi();
+            var flagType = snesApi.GetFlag(offset);
 
             if (flagType == FlagType.Opcode)
                 return data.GetInstructionLength(offset);
@@ -100,7 +102,7 @@ namespace Diz.LogWriter
             while (
                 min < max &&
                 offset + min < romSizeMax &&
-                data.GetFlag(offset + min) == flagType &&
+                snesApi.GetFlag(offset + min) == flagType &&
                 data.Labels.GetLabelName(data.ConvertPCtoSnes(offset + min)) == "" &&
                 (offset + min) / bankSize == myBank
             ) min += step;
@@ -153,7 +155,7 @@ namespace Diz.LogWriter
             }
         }
 
-        public static string GeneratePointerStr(this ILogCreatorDataSource data, int offset, int bytes)
+        public static string GeneratePointerStr(this ISnesApi<IData> data, int offset, int bytes)
         {
             var ia = -1;
             string format = "", param = "";
@@ -187,7 +189,7 @@ namespace Diz.LogWriter
             return string.Format(format, param);
         }
         
-        public static string GetFormattedBytes(this ILogCreatorDataSource data, int offset, int step, int bytes)
+        public static string GetFormattedBytes(this IReadOnlyByteSource data, int offset, int step, int bytes)
         {
             var res = step switch
             {
