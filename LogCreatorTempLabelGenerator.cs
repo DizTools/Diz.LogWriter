@@ -34,14 +34,51 @@ internal class LogCreatorTempLabelGenerator
         }
     }
 
+    // this could have some problems but, is probably the right thing to do by default.
+    // turn off if diagnosing mirrored label name issues with the resulting assembly.
+    private const bool fixup_snes_labels_by_reconverting_addresses = true;
+
     private void GenerateTempLabelIfNeededAt(int pcOffset)
     {
         var snes = GetAddressOfAnyUsefulLabelsAt(pcOffset);
         if (snes == -1)
             return;
+        
+        // here's the fun part. (Note: we might need to do this in other parts of the assembly genreation process too)
+        // the actual bytes in the ROM will sometimes cause us to generate a mirrored address that is totally fine, but
+        // other parts of the assembly label generating process will use a different mirrored address that still maps to
+        // the same bytes.
+        var normalizedSnesAddress =
+            fixup_snes_labels_by_reconverting_addresses
+                ? HackyNormalizeSnesMirroredAddress(snes)
+                : snes;
 
-        var labelName = GenerateGenericTempLabel(snes);
-        Data.TemporaryLabelProvider.AddTemporaryLabel(snes, new Label {Name = labelName});
+        var normalizedLabelText = GenerateGenericTempLabel(normalizedSnesAddress);
+        
+        if (fixup_snes_labels_by_reconverting_addresses)
+        {
+            // TODO:
+            // if an existing label already exists at this address, use that for both the new and temp label names.
+            // kind of a weird artifact of doing aliases this way.
+            var label1 = Data.Labels.GetLabel(snes);
+            var label2 = Data.Labels.GetLabel(normalizedSnesAddress);
+
+            if (label1 != null || label2 != null)
+            {
+                normalizedLabelText = label1?.Name ?? label2.Name;
+            }
+        }
+        
+        Data.TemporaryLabelProvider.AddTemporaryLabel(normalizedSnesAddress, new Label {Name = normalizedLabelText});
+
+        if (fixup_snes_labels_by_reconverting_addresses && snes != normalizedSnesAddress)
+        {
+            // now, create an alias to deal with the mirroring.
+            // this label will have the normalized TEXT (i.e. DATA8_808017) but will have an aliased offset.
+            // this means there will be two labels with that test, one at 0x008017, one at 0x808017.
+            // either one will print the SAME text of the normalized label i.e. DATA8_808017 and never DATA8_008017 
+            Data.TemporaryLabelProvider.AddTemporaryLabel(snes, new Label {Name = normalizedLabelText});
+        }
     }
 
     private int GetAddressOfAnyUsefulLabelsAt(int pcOffset)
@@ -58,8 +95,26 @@ internal class LogCreatorTempLabelGenerator
             return -1;
 
         var snesIa = Data.GetIntermediateAddressOrPointer(pcOffset);
+        if (snesIa == -1)
+            return -1;
+        
         var pc = Data.ConvertSnesToPc(snesIa);
         return pc >= 0 ? snesIa : -1;
+    }
+
+    protected int HackyNormalizeSnesMirroredAddress(int snes)
+    {
+        // in order to produce correct assembly, we're going to try to normalize the mirrored addresses here
+        // example: (LoRom mapping)
+        // Snes address 0x808017 and 0x008017 both ACTUALLY refer to the SAME ROM offset of 0x17.
+        // we'll normalize 0x008017 to turn it into it's mirrored version of 0x808017.
+        // super-simple dumb hacky way to do this: convert SNES to PC and back again.
+        
+        var pcOffset = Data.ConvertSnesToPc(snes);
+        if (pcOffset == -1)
+            return snes;    // eh, we tried, no luck.
+
+        return Data.ConvertPCtoSnes(pcOffset);
     }
 
     private string GenerateGenericTempLabel(int snes)
