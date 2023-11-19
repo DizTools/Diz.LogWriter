@@ -1,7 +1,9 @@
 ﻿using System;
+using Diz.Core.Interfaces;
 using Diz.Core.model;
 using Diz.Core.util;
 using Diz.Cpu._65816;
+using JetBrains.Annotations;
 
 namespace Diz.LogWriter.assemblyGenerators
 {
@@ -367,36 +369,54 @@ namespace Diz.LogWriter.assemblyGenerators
     // example output:  "FnMultiplyByTwo = $808012"
     public class AssemblyGenerateLabelAssign : AssemblyPartialLineGenerator
     {
+        public record PrintableLabelDataAtOffset(int SnesAddress, string Name, string Comment)
+        {
+            public string GetSnesAddressFormatted() => Util.NumberToBaseString(SnesAddress, Util.NumberBase.Hexadecimal, 6, true);
+        }
+        
+        public static PrintableLabelDataAtOffset GetPrintableLabelDataAtOffset(
+            int snesAddress,
+            IReadOnlyLabelProvider labelProvider 
+        ) {
+            var labelName = labelProvider.GetLabelName(snesAddress);
+            if (string.IsNullOrEmpty(labelName)) 
+                return null;
+            
+            return new PrintableLabelDataAtOffset(
+                Name: labelName,
+                SnesAddress: snesAddress,
+                Comment: labelProvider.GetLabelComment(snesAddress) ?? ""
+            );
+        }
+        
         public AssemblyGenerateLabelAssign()
         {
             Token = "%labelassign";
             DefaultLength = 1;
         }
+
         protected override string Generate(int offset, int length)
         {
             // EXTREMELY IMPORTANT:
             // unlike all the other generators where offset is a ROM offset,
             // for us, offset will be a SNES address.
-            var snesAddress = offset; // yes. this is correct.
+            // ReSharper disable once InlineTemporaryVariable
+            var snesAddress = offset; // yes. this is correct. HACK THIS IN THERE. DO IT.
             
-            var labelName = Data.Labels.GetLabelName(snesAddress);
-            var snesAddrFormatted = Util.NumberToBaseString(snesAddress, Util.NumberBase.Hexadecimal, 6, true);
-            var labelComment = Data.Labels.GetLabelComment(snesAddress);
-
-            if (string.IsNullOrEmpty(labelName))
-                return "";
-
-            labelComment ??= "";
+            var labelDataAtOffset = GetPrintableLabelDataAtOffset(snesAddress, Data.Labels);
+            if (labelDataAtOffset == null)
+                return null;
 
             var finalCommentText = "";
 
             // TODO: probably not the best way to stuff this in here. -Dom
             // we should consider putting this in the %comment% section in the future.
             // for now, just hacking this in so it's included somewhere. this option defaults to OFF
-            if (LogCreator.Settings.PrintLabelSpecificComments && labelComment != "")
-                finalCommentText = $"; !^ {labelComment} ^!";
+            if (LogCreator.Settings.PrintLabelSpecificComments && labelDataAtOffset.Comment != "")
+                finalCommentText = $"; !^ {labelDataAtOffset.Comment} ^!";
 
-            var str = $"{labelName} = {snesAddrFormatted}{finalCommentText}";
+            var snesAddrFormatted = labelDataAtOffset.GetSnesAddressFormatted();
+            var str = $"{labelDataAtOffset.Name} = {snesAddrFormatted}{finalCommentText}";
             return Util.LeftAlign(length, str);
         }
     }

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using Diz.Core.export;
 using Diz.Core.Interfaces;
 using Diz.LogWriter.util;
@@ -147,15 +148,30 @@ namespace Diz.LogWriter
                 
                 new AsmCreationInstructions {LogCreator = this},
                 
+                // write labels actually used in project
                 new AsmStepWriteUnvisitedLabels
                 {
                     LogCreator = this, 
                     LabelTracker = LabelTracker,
                 },
                 
-                new AsmStepWriteUnvisitedLabelsIndex
+                // write all labels even if they're not used
+                new AsmStepWriteAllLabels
                 {
                     Enabled = Settings.IncludeUnusedLabels,
+                    LogCreator = this,
+                    LabelTracker = LabelTracker,
+                    OutputFilename = "all-labels.txt",
+                },
+                
+                // write all labels even if they're not used (as CSV)
+                new AsmStepExtraOutputAllLabelsCsv
+                {
+                    // if wanted, make this a separate setting for CSV export. for now if they check "export extra label stuff"
+                    // we'll just include the CSV stuff by default.
+                    Enabled = Settings.IncludeUnusedLabels,
+                    OutputFilename = "all-labels.csv",
+                    
                     LogCreator = this,
                     LabelTracker = LabelTracker,
                 }
