@@ -22,13 +22,13 @@ public class LogCreatorByteSource : ILogCreatorDataSource<IData>
     public RomMapMode RomMapMode
     {
         get => Data.RomMapMode;
-        set => Data.RomMapMode = value;
+        set => Data.RomMapMode = value; // need to not use this for diz3
     }
 
     public RomSpeed RomSpeed
     {
         get => Data.RomSpeed;
-        set => Data.RomSpeed = value;
+        set => Data.RomSpeed = value;  // need to not use this for diz3
     }
 
     public IReadOnlyLabelProvider Labels => Data.Labels;
