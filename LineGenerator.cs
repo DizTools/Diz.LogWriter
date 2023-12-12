@@ -17,15 +17,18 @@ namespace Diz.LogWriter
             LogCreatorLineFormatter = new LogCreatorLineFormatter(formatStr, Generators);
         }
         
-        public string GenerateSpecialLine(string type, int offset = -1) => GenerateLine(offset, type);
+        public string GenerateSpecialLine(string type, bool fullLine, int offset = -1) => GenerateLine(offset, fullLine, type);
+        public string GenerateSpecialLine(string type, int offset = -1) => GenerateLine(offset, true, type);
         public string GenerateNormalLine(int offset) => GenerateLine(offset);
 
-        private string GenerateLine(int offset, string overrideFormatterName = null)
+        private string GenerateLine(int offset, bool generateFullLine = true, string overrideFormatterName = null)
         {
             var line = "";
             foreach (var columnFormat in LogCreatorLineFormatter.ColumnFormats)
             {
                 line += GenerateColumn(offset, columnFormat, overrideFormatterName);
+				if (!generateFullLine && columnFormat.Value == "code")
+                    return line;
             }
 
             return line;
