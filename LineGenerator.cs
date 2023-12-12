@@ -17,8 +17,7 @@ namespace Diz.LogWriter
             LogCreatorLineFormatter = new LogCreatorLineFormatter(formatStr, Generators);
         }
         
-        public string GenerateSpecialLine(string type, bool fullLine, int offset = -1) => GenerateLine(offset, fullLine, type);
-        public string GenerateSpecialLine(string type, int offset = -1) => GenerateLine(offset, true, type);
+        public string GenerateSpecialLine(string type, int offset = -1) => GenerateLine(offset, LogCreator.Settings.GenerateFullLine, type);
         public string GenerateNormalLine(int offset) => GenerateLine(offset);
 
         private string GenerateLine(int offset, bool generateFullLine = true, string overrideFormatterName = null)

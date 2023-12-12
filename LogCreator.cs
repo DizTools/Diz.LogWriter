@@ -214,7 +214,7 @@ namespace Diz.LogWriter
             if (special == "empty" && !Settings.OutputExtraWhitespace)
                 return;
             
-            var output = LineGenerator.GenerateSpecialLine(special, Settings.GenerateFullLine, offset); 
+            var output = LineGenerator.GenerateSpecialLine(special, offset); 
             WriteLine(output);
         }
 
