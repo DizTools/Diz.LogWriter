@@ -26,7 +26,7 @@ namespace Diz.LogWriter
             foreach (var columnFormat in LogCreatorLineFormatter.ColumnFormats)
             {
                 line += GenerateColumn(offset, columnFormat, overrideFormatterName);
-				if (!generateFullLine && columnFormat.Value == "code")
+                if (!generateFullLine && columnFormat.Value == "code")
                     return line;
             }
 
