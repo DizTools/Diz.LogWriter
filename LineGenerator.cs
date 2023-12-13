@@ -72,7 +72,7 @@ namespace Diz.LogWriter
 
             return new LogCreatorLineFormatter.ColumnFormat
             {
-                LengthOverride = GetGeneratorFor(originalColumn.Value).DefaultLength,
+                LengthOverride = (originalColumn.LengthOverride != null) ? originalColumn.LengthOverride : GetGeneratorFor(originalColumn.Value).DefaultLength,
                 IgnoreOffset = ignoreOffset,
                 Value = val,
             };
