@@ -62,9 +62,10 @@ namespace Diz.LogWriter.assemblyGenerators
             LogCreator.OnLabelVisited(snesAddress);
 
             var noColon = label.Length == 0 || label[0] == '-' || label[0] == '+';
+            var newLine = (LogCreator.Settings.NewLine && !noColon) ? string.Format($"{Environment.NewLine}{{0,{length}}}", "") : "";
 
             var str = $"{label}{(noColon ? "" : ":")}";
-            return Util.LeftAlign(length, str);
+            return $"{Util.LeftAlign(length, str)}{newLine}";
         }
     }
 
