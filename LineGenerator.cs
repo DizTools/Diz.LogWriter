@@ -17,18 +17,21 @@ namespace Diz.LogWriter
             LogCreatorLineFormatter = new LogCreatorLineFormatter(formatStr, Generators);
         }
         
-        public string GenerateSpecialLine(string type, int offset = -1) => GenerateLine(offset, type);
+        public string GenerateSpecialLine(string type, int offset = -1) => GenerateLine(offset, LogCreator.Settings.GenerateFullLine, type);
         public string GenerateNormalLine(int offset) => GenerateLine(offset);
 
-        private string GenerateLine(int offset, string overrideFormatterName = null)
+        private string GenerateLine(int offset, bool generateFullLine = true, string overrideFormatterName = null)
         {
             var line = "";
             foreach (var columnFormat in LogCreatorLineFormatter.ColumnFormats)
             {
-                line += GenerateColumn(offset, columnFormat, overrideFormatterName);
+                var column = GenerateColumn(offset, columnFormat, overrideFormatterName);
+                if (generateFullLine || (!generateFullLine && (columnFormat.Value == "label" || columnFormat.Value == "code" || string.IsNullOrWhiteSpace(column))))
+                    line += column;
             }
 
-            return line;
+            line = line.TrimEnd();
+            return String.IsNullOrEmpty(line) ? " " : line;
         }
 
         private string GenerateColumn(int offset, LogCreatorLineFormatter.ColumnFormat columnFormat, string overrideFormatterName = null)
@@ -69,7 +72,7 @@ namespace Diz.LogWriter
 
             return new LogCreatorLineFormatter.ColumnFormat
             {
-                LengthOverride = GetGeneratorFor(originalColumn.Value).DefaultLength,
+                LengthOverride = (originalColumn.LengthOverride != null) ? originalColumn.LengthOverride : GetGeneratorFor(originalColumn.Value).DefaultLength,
                 IgnoreOffset = ignoreOffset,
                 Value = val,
             };
