@@ -3,8 +3,6 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using CsvHelper;
-using Diz.Core.Interfaces;
-using Diz.Core.util;
 using Diz.LogWriter.assemblyGenerators;
 using JetBrains.Annotations;
 
@@ -141,6 +139,78 @@ namespace Diz.LogWriter
             Debug.Assert(csvWriter != null);
             csvWriter.WriteRecord(labelRecord);
             csvWriter.NextRecord();
+        }
+    }
+    
+    
+
+    // same as above except output as a CSV file
+    public class AsmStepExtraOutputBsneSymFile : AsmStepWriteAllLabels
+    { 
+        protected override void Execute()
+        {
+            // this will print all the labels
+            base.Execute();
+            
+            // with that done, we also need to print the comments:
+            LogCreator.WriteLine("\n");
+            LogCreator.WriteLine("[comments]");
+
+            // go through all SNES address space looking for comments
+            for (var snesAddress = 0; snesAddress < 0x1000000; ++snesAddress)
+            {
+                var commentText = Data.GetCommentText(snesAddress);
+                if (commentText.Length == 0)
+                    continue;
+                
+                WriteLineBsnesFormattedAddressAndText(snesAddress, commentText);
+            }
+        }
+        
+        // sample bsnes .sym file format:
+        
+        // [labels]
+        // 00:2100 SNES.INIDISP
+        // c2:0aae fn_some_function_battle_whatever
+        //
+        // [comments]
+        // c0:0082 Read variable X and multiply by 42, that is the screen brightness
+        // c0:0097 This is the main loop
+        
+        protected override void OutputHeader()
+        {
+            LogCreator.WriteLine("[labels]");
+        }
+
+        protected override void OutputLabelAtOffset(string category, int offset)
+        {
+            var printableLabel = AssemblyGenerateLabelAssign.GetPrintableLabelDataAtOffset(offset, Data.Labels);
+            if (printableLabel == null)
+                return;
+            
+            // we're going to exclude a few auto-generated labels from this just keep BSNES exports de-cluttered.
+            if (printableLabel.Name.StartsWith("CODE_") || printableLabel.Name.StartsWith("LOOSE_OP_"))
+                return;
+            
+            WriteLineBsnesFormattedAddressAndText(printableLabel.SnesAddress, printableLabel.Name);
+        }
+
+        private void WriteLineBsnesFormattedAddressAndText(int snesAddress, string text)
+        {
+            // always output snes addresses (not offsets)
+            // "c2:0aae Well hey son this is some fancy label or comment text for BSNES"
+            var printableSnesAddress = FormatAs24BitBsnesAddress(snesAddress);
+            var formattedText = text.ReplaceLineEndings("");
+            LogCreator.WriteLine($"{printableSnesAddress} {formattedText}");
+        }
+
+        private static string FormatAs24BitBsnesAddress(int address)
+        {
+            // print a 24bit number in the format BSNES .sym files like:
+            // "c2:0aae"
+            return address.ToString("X6").Insert(2, ":");
+            
+            // (this function doesn't care if it's SNES address or offset, it's printing the number)
         }
     }
 }

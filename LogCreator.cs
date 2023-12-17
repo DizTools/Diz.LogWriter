@@ -174,6 +174,19 @@ namespace Diz.LogWriter
                     
                     LogCreator = this,
                     LabelTracker = LabelTracker,
+                },
+                
+                
+                // write in a format that can be used by BSNES
+                new AsmStepExtraOutputBsneSymFile
+                {
+                    // if wanted, make this a separate setting for CSV export. for now if they check "export extra label stuff"
+                    // we'll just include the CSV stuff by default.
+                    Enabled = Settings.IncludeUnusedLabels,
+                    OutputFilename = "bsnes.sym",   // would be cool to output with the same base filename of the ROM.
+                    
+                    LogCreator = this,
+                    LabelTracker = LabelTracker,
                 }
             };
         }
