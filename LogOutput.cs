@@ -35,7 +35,6 @@ namespace Diz.LogWriter
 
         public void WriteErrorLine(int offset, string msg)
         {
-            ErrorCount++;
             var offsetMsg = offset >= 0 ? $" Offset 0x{offset:X}" : "";
             WriteErrorLine($"({ErrorCount}){offsetMsg}: {msg}");
         }
