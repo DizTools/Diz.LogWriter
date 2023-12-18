@@ -155,9 +155,8 @@ namespace Diz.LogWriter
             // with that done, we also need to print the comments:
             LogCreator.WriteLine("\n");
             LogCreator.WriteLine("[comments]");
-
-            // go through all SNES address space looking for comments
-            for (var snesAddress = 0; snesAddress < 0x1000000; ++snesAddress)
+            
+            foreach (var (snesAddress, _) in Data.Labels.Labels)
             {
                 var commentText = Data.GetCommentText(snesAddress);
                 if (commentText.Length == 0)
