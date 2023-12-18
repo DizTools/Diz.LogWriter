@@ -24,8 +24,8 @@ namespace Diz.LogWriter
         {
             // important: Asar will not accept null characters printed inside quoted text. so we need to break up text lines.
 
-            bool IsPrintableAsciiCharacter(char x) => 
-                x >= 32 && x <= 127;
+            bool IsPrintableAsciiCharacter(char c) => 
+                c >= 32 && c <= 127 && c != '"';
 
             var outputStr = new StringBuilder("db ");
             var inQuotedSection = false;
@@ -63,7 +63,23 @@ namespace Diz.LogWriter
                 if (IsPrintableAsciiCharacter(c))
                 {
                     StartQuotedSectionIfNeeded(i != 0);
-                    outputStr.Append(c);
+
+                    // final thing.  there are some characters that, yes, are printable, but, we need an extra escape for them.
+                    switch (c)
+                    {
+                        // NOTE: there might be some way to print a literal double quote in the output stream but,
+                        // couldn't figure it out.  something about doubling quotes.
+                        // for now, we'll count it as "not printable"
+                        
+                        case '\\':
+                            // literal single backslash, we need to escape it when we write it.
+                            outputStr.Append(@"\\"); // literally double backslash.
+                            break;
+                        default:
+                            // otherwise, it's just a normal character
+                            outputStr.Append(c);
+                            break;
+                    }
                 } 
                 else
                 {
