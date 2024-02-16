@@ -91,7 +91,11 @@ namespace Diz.LogWriter
 
         private bool DoesIndirectAddressPointToOpcode(int ia)
         {
-            return SnesApi.GetFlag(Data.ConvertSnesToPc(ia)) == FlagType.Opcode;
+            var offset = Data.ConvertSnesToPc(ia);
+            if (offset == -1)
+                return false;
+            
+            return SnesApi.GetFlag(offset) == FlagType.Opcode;
         }
 
         private bool IsOpcodeOutboundJump(int offset)
