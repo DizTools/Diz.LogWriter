@@ -11,9 +11,11 @@ namespace Diz.LogWriter
     public abstract class AsmStepExtraLabelOutputBase : AsmCreationBase
     {
         public LabelTracker LabelTracker { get; init; }
-    }
+    
+    // TODO: we can probably refactor/recombine a few of these related classes together
 
-    // output the labels actually used in the project  
+    // generate labels.asm. this is a list of labels that are NOT defined implicitly in the main .asm files
+    // this will be a list of unvisited labels. it will NOT contain VISITED labels.
     public class AsmStepWriteUnvisitedLabels : AsmStepExtraLabelOutputBase
     {
         protected override void Execute()
@@ -38,15 +40,15 @@ namespace Diz.LogWriter
 
     // write all labels, regardless of whether they're used.
     // output in a format that could be used directly for disassembly or importing into bsnes/etc
+    // this is all optional: if requested, print all labels regardless of use.
+    // Useful for debugging, documentation, or reverse engineering workflow.
+    // this file shouldn't need to be included in the build, it's just reference documentation
     public class AsmStepWriteAllLabels : AsmStepExtraLabelOutputBase
     {
         public string OutputFilename { get; init; }
 
         protected override void Execute()
         {
-            // part 2: optional: if requested, print all labels regardless of use.
-            // Useful for debugging, documentation, or reverse engineering workflow.
-            // this file shouldn't need to be included in the build, it's just reference documentation
             LogCreator.SwitchOutputStream(OutputFilename);
             OutputHeader();
             foreach (var (snesAddress, _) in Data.Labels.Labels)
@@ -144,7 +146,7 @@ namespace Diz.LogWriter
     
     
 
-    // same as above except output as a CSV file
+    // same as above except output as a BSNES .sym file, for use with the BSNES debugger
     public class AsmStepExtraOutputBsneSymFile : AsmStepWriteAllLabels
     { 
         protected override void Execute()

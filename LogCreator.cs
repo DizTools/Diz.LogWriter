@@ -140,6 +140,10 @@ namespace Diz.LogWriter
             Steps = new List<IAsmCreationStep>
             {
                 new AsmCreationRomMap {LogCreator = this},
+            // the following steps will be executed in order to generate the output disassembly files
+            // each generates text that ends up in the generated/ directory.
+            
+                // outputs all the include stuff in main.asm like "incsrc bank_C0.asm", or "incsrc labels.asm" etc.
                 new AsmCreationMainBankIncludes
                 {                    
                     Enabled = Settings.Structure == LogWriterSettings.FormatStructure.OneBankPerFile,
@@ -148,14 +152,29 @@ namespace Diz.LogWriter
                 
                 new AsmCreationInstructions {LogCreator = this},
                 
-                // write labels actually used in project
+
+                // THE MEAT! outputs all the actual disassembly instructions in each of the bank files.
+                // this step also (implicitly) defines labels as they're output, and marks them as "visited" 
+
+                // outputs the lines in labels.asm, which includes ONLY the leftover labels that aren't defined somewhere else.
                 new AsmStepWriteUnvisitedLabels
                 {
                     LogCreator = this, 
                     LabelTracker = LabelTracker,
                 },
-                
-                // write all labels even if they're not used
+
+                // --------------
+                // at this point, we have everything that's needed for an external assembler, like asar.exe, to start with
+                // main.asm and generate a byte-identical ROM from the disassembly. we could stop right here and we'd be done.
+                //
+                // however, there are some other optional types of files we can generate that are useful for further processing or 
+                // for metadata/romhacking/etc.
+                // ----------------
+
+                // TODO: the 3 label steps below will run if Settings.IncludeUnusedLabels is checked.
+
+                // optional: let's generate a file that contains ALL LABELS regardless of whether or not they were referenced.
+
                 new AsmStepWriteAllLabels
                 {
                     Enabled = Settings.IncludeUnusedLabels,
@@ -163,8 +182,9 @@ namespace Diz.LogWriter
                     LabelTracker = LabelTracker,
                     OutputFilename = "all-labels.txt",
                 },
-                
-                // write all labels even if they're not used (as CSV)
+
+                // optional: same as above BUT output all labels even if they're not used (same data as above, just as CSV)
+
                 new AsmStepExtraOutputAllLabelsCsv
                 {
                     // if wanted, make this a separate setting for CSV export. for now if they check "export extra label stuff"
@@ -175,16 +195,14 @@ namespace Diz.LogWriter
                     LogCreator = this,
                     LabelTracker = LabelTracker,
                 },
-                
-                
-                // write in a format that can be used by BSNES
+
+                // optional: same as above EXCEPT this time we'll do it as a .sym file, which BSNES's debugger can read
+
                 new AsmStepExtraOutputBsneSymFile
                 {
-                    // if wanted, make this a separate setting for CSV export. for now if they check "export extra label stuff"
-                    // we'll just include the CSV stuff by default.
                     Enabled = Settings.IncludeUnusedLabels,
-                    OutputFilename = "bsnes.sym",   // would be cool to output with the same base filename of the ROM.
-                    
+                    OutputFilename = "bsnes.sym", // would be cool to output with the same base filename of the ROM.
+
                     LogCreator = this,
                     LabelTracker = LabelTracker,
                 }

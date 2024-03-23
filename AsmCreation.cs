@@ -35,7 +35,7 @@ namespace Diz.LogWriter
                 LogCreator.WriteSpecialLine("incsrc", i);
             
             // output the include for labels.asm file
-            // in.Minvalue just means output a line with "labels.asm" on it
+            // int.Minvalue here is just a magic nnumber that means output a line with "labels.asm" on it
             LogCreator.WriteSpecialLine("incsrc", int.MinValue);
         }
     }
