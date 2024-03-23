@@ -116,7 +116,7 @@ namespace Diz.LogWriter
                 output = writer.ToString();
             }
             
-            var lines = output.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
+            var lines = output.Split(["\r\n", "\r", "\n"], StringSplitOptions.None);
             foreach (var line in lines)
             {
                 LogCreator.WriteLine(line);

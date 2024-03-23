@@ -137,30 +137,31 @@ namespace Diz.LogWriter
 
         public void RegisterSteps()
         {
-            Steps = new List<IAsmCreationStep>
-            {
-                new AsmCreationRomMap {LogCreator = this},
             // the following steps will be executed in order to generate the output disassembly files
             // each generates text that ends up in the generated/ directory.
             
+            Steps =
+            [
+                new AsmCreationRomMap { LogCreator = this },
+
                 // outputs all the include stuff in main.asm like "incsrc bank_C0.asm", or "incsrc labels.asm" etc.
                 new AsmCreationMainBankIncludes
-                {                    
+                {
                     Enabled = Settings.Structure == LogWriterSettings.FormatStructure.OneBankPerFile,
                     LogCreator = this
                 },
-                
-                new AsmCreationInstructions {LogCreator = this},
-                
 
                 // THE MEAT! outputs all the actual disassembly instructions in each of the bank files.
                 // this step also (implicitly) defines labels as they're output, and marks them as "visited" 
+                new AsmCreationInstructions { LogCreator = this },
 
                 // outputs the lines in labels.asm, which includes ONLY the leftover labels that aren't defined somewhere else.
+                // i.e. labels in RAM or labels that aren't associated with an offset from the step above will appear here.
                 new AsmStepWriteUnvisitedLabels
                 {
-                    LogCreator = this, 
+                    LogCreator = this,
                     LabelTracker = LabelTracker,
+                    OutputFilename = "labels.asm"
                 },
 
                 // --------------
@@ -191,7 +192,7 @@ namespace Diz.LogWriter
                     // we'll just include the CSV stuff by default.
                     Enabled = Settings.IncludeUnusedLabels,
                     OutputFilename = "all-labels.csv",
-                    
+
                     LogCreator = this,
                     LabelTracker = LabelTracker,
                 },
@@ -206,7 +207,7 @@ namespace Diz.LogWriter
                     LogCreator = this,
                     LabelTracker = LabelTracker,
                 }
-            };
+            ];
         }
         
         private void InitOutput()

@@ -47,12 +47,14 @@ internal class LogCreatorTempLabelGenerator
     private int GetAddressOfAnyUsefulLabelsAt(int pcOffset)
     {
         if (GenerateAllUnlabeled)
-            return Data.ConvertPCtoSnes(pcOffset); // this may not be right either...
+            return Data.ConvertPCtoSnes(pcOffset);
 
         var flag = Data.Data.GetSnesApi().GetFlag(pcOffset);
-        var usefulToCreateLabelFrom =
-            flag == FlagType.Opcode || flag == FlagType.Pointer16Bit ||
-            flag == FlagType.Pointer24Bit || flag == FlagType.Pointer32Bit;
+        var usefulToCreateLabelFrom = flag is 
+                FlagType.Opcode or 
+                FlagType.Pointer16Bit or 
+                FlagType.Pointer24Bit or 
+                FlagType.Pointer32Bit;
 
         if (!usefulToCreateLabelFrom)
             return -1;

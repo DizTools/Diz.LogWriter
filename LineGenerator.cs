@@ -32,7 +32,7 @@ namespace Diz.LogWriter
             }
 
             line = line.TrimEnd();
-            return String.IsNullOrEmpty(line) ? " " : line;
+            return string.IsNullOrEmpty(line) ? " " : line;
         }
 
         private string GenerateColumn(int offset, LogCreatorLineFormatter.ColumnFormat columnFormat, string overrideFormatterName = null)
