@@ -161,7 +161,6 @@ namespace Diz.LogWriter
                 {
                     LogCreator = this,
                     LabelTracker = LabelTracker,
-                    OutputFilename = "labels.asm"
                 },
 
                 // --------------
