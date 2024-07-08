@@ -1,8 +1,10 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using CsvHelper;
+using Diz.Core.Interfaces;
 using Diz.LogWriter.assemblyGenerators;
 using JetBrains.Annotations;
 
@@ -10,7 +12,19 @@ namespace Diz.LogWriter
 {
     public abstract class AsmStepExtraLabelOutputBase : AsmCreationBase
     {
+        public string OutputFilename { get; init; }
         public LabelTracker LabelTracker { get; init; }
+
+        protected override void Execute()
+        {
+            LogCreator.SwitchOutputStream(OutputFilename);
+        }
+        
+        protected virtual void OutputHeader()
+        {
+            // NOP
+        }
+    }
     
     // TODO: we can probably refactor/recombine a few of these related classes together
 
@@ -18,23 +32,23 @@ namespace Diz.LogWriter
     // this will be a list of unvisited labels. it will NOT contain VISITED labels.
     public class AsmStepWriteUnvisitedLabels : AsmStepExtraLabelOutputBase
     {
+        private Dictionary<int, IReadOnlyLabel> GetLabelList() => LabelTracker.UnvisitedLabels;
+        
         protected override void Execute()
         {
-            LogCreator.SwitchOutputStream("labels");
-
-            foreach (var (snesAddress, _) in LabelTracker.UnvisitedLabels)
+            base.Execute();
+            foreach (var (snesAddress, _) in GetLabelList())
             {
-                WriteUnusedLabel(snesAddress);
+                WriteAsmLineLabel(snesAddress);
             }
         }
 
-        private void WriteUnusedLabel(int snesAddress)
+        private void WriteAsmLineLabel(int snesAddress)
         {
-            // shove this in here even though what we SHOULD do is express it as a ROM offset.
-            // however, we need to be able to pass in non-ROM SNES addresses.
-            var stuffSnesAddressInOffset = snesAddress;
-                
-            LogCreator.WriteLine(LogCreator.LineGenerator.GenerateSpecialLine("labelassign", stuffSnesAddressInOffset));
+            // HACKY NOTE: we pass in the snesAddress here but, GenerateSpecialLine() normally works on ROM offsets.
+            LogCreator.WriteLine(
+                LogCreator.LineGenerator.GenerateSpecialLine("labelassign", snesAddress)
+            );
         }
     }
 
@@ -45,21 +59,16 @@ namespace Diz.LogWriter
     // this file shouldn't need to be included in the build, it's just reference documentation
     public class AsmStepWriteAllLabels : AsmStepExtraLabelOutputBase
     {
-        public string OutputFilename { get; init; }
-
+        private IEnumerable<KeyValuePair<int, IAnnotationLabel>> GetLabelList() => Data.Labels.Labels;
+        
         protected override void Execute()
         {
             LogCreator.SwitchOutputStream(OutputFilename);
             OutputHeader();
-            foreach (var (snesAddress, _) in Data.Labels.Labels)
+            foreach (var (snesAddress, _) in GetLabelList())
             {
                 WriteLabel(snesAddress);
             }
-        }
-
-        protected virtual void OutputHeader()
-        {
-            // NOP
         }
 
         private void WriteLabel(int snesAddress)
@@ -69,10 +78,7 @@ namespace Diz.LogWriter
             
             // shove this in here even though what we SHOULD do is express it as a ROM offset.
             // however, we need to be able to pass in non-ROM SNES addresses.
-            // ReSharper disable once InlineTemporaryVariable
-            var hackShoveSnesAddressInsteadOfRomOffset = snesAddress;
-            
-            OutputLabelAtOffset(category, hackShoveSnesAddressInsteadOfRomOffset);
+            OutputLabelAtOffset(category, snesAddress);
         }
 
         protected virtual void OutputLabelAtOffset(string category, int offset)
