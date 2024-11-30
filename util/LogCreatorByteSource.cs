@@ -40,7 +40,7 @@ public class LogCreatorByteSource : ILogCreatorDataSource<IData>
     public int ConvertPCtoSnes(int offset) => SnesApi.ConvertPCtoSnes(offset);
     public int ConvertSnesToPc(int offset) => SnesApi.ConvertSnesToPc(offset);
     public int GetIntermediateAddressOrPointer(int offset) => SnesApi.GetIntermediateAddressOrPointer(offset);
-    public int GetIntermediateAddress(int offset, bool resolve = false) => SnesApi.GetIntermediateAddress(offset, resolve);
+    public int GetIntermediateAddress(int offset, bool resolve = false, int overrideDatabank = -1) => SnesApi.GetIntermediateAddress(offset, resolve, overrideDatabank);
     public bool IsMatchingIntermediateAddress(int intermediateAddress, int addressToMatch) => SnesApi.IsMatchingIntermediateAddress(intermediateAddress, addressToMatch);
 
     public int GetRomSize() => SnesApi.GetRomSize();
