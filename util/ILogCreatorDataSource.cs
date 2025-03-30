@@ -5,6 +5,7 @@ namespace Diz.LogWriter.util;
 public interface ILogCreatorDataSource<out TData> :
     IInstructionGettable,
     IReadOnlyByteSource,
+    IRomByteFlagsGettable,
     IRomMapProvider,
     ICommentTextProvider,
     IReadOnlyLabels,

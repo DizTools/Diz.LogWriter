@@ -46,4 +46,15 @@ public class LogCreatorByteSource : ILogCreatorDataSource<IData>
     public int GetRomSize() => SnesApi.GetRomSize();
     public int GetBankSize() => SnesApi.GetBankSize();
     public InOutPoint GetInOutPoint(int offset) => SnesApi.GetInOutPoint(offset);
+    public int GetMxFlags(int i) => SnesApi.GetMxFlags(i);
+
+    public bool GetMFlag(int i) => SnesApi.GetMFlag(i);
+
+    public bool GetXFlag(int i) => SnesApi.GetXFlag(i);
+
+    public int GetDataBank(int offset) => SnesApi.GetDataBank(offset);
+
+    public int GetDirectPage(int offset) => SnesApi.GetDirectPage(offset);
+
+    public FlagType GetFlag(int offset) => SnesApi.GetFlag(offset);
 }
