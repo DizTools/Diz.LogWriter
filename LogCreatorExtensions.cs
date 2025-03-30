@@ -178,7 +178,20 @@ namespace Diz.LogWriter
             switch (bytes)
             {
                 case 2:
-                    ia = (data.GetDataBank(offset) << 16) | data.GetRomWordUnsafe(offset);
+                    // here's a tricky Diz-specific thing.
+                    // at this address, we only have the two bytes of the IA to work with (since this is a 16-bit pointer)
+                    // always (maybe... almost always? can't think of a case otherwise), what we want for the bank is the
+                    // SAME bank as where the pointer is sitting.  what we DON'T want is the overridden bank (the one you can type in the UI).
+                    
+                    // older Diz behavior, user has to specify the bank we'll use for the label address
+                    // var bankToUse = data.GetDataBank(offset) << 16;
+                    
+                    // newer Diz Behavior:
+                    // this is better (as long as it's valid) because it will insert the correct labels into the pointer table assembly output
+                    var bankToUse = RomUtil.GetBankFromSnesAddress(data.ConvertPCtoSnes(offset));
+                    
+                    ia = (bankToUse << 16) | data.GetRomWordUnsafe(offset);
+                    
                     format = "dw {0}";
                     param = Util.NumberToBaseString(data.GetRomWordUnsafe(offset), Util.NumberBase.Hexadecimal, 4, true);
                     break;

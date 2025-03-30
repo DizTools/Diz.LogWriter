@@ -1,4 +1,5 @@
-﻿using Diz.Core.util;
+﻿using Diz.Core.model;
+using Diz.Core.util;
 
 namespace Diz.LogWriter
 {
@@ -40,10 +41,12 @@ namespace Diz.LogWriter
 
         private void WriteBlankLineIfStartingNewParagraph(int pointer)
         {
-            if (!Data.IsLocationAReadPoint(pointer) && !AreAnyLabelsPresentAt(pointer))
+            // skip if we're in the middle of a pointer table
+            if (Data.GetFlag(pointer) is FlagType.Pointer16Bit or FlagType.Pointer24Bit or FlagType.Pointer32Bit)
                 return;
 
-            LogCreator.WriteEmptyLine();
+            if (Data.IsLocationAReadPoint(pointer) || AreAnyLabelsPresentAt(pointer)) 
+                LogCreator.WriteEmptyLine();
         }
 
         private bool AreAnyLabelsPresentAt(int pointer)
