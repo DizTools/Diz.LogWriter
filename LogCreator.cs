@@ -249,16 +249,16 @@ namespace Diz.LogWriter
             WriteLine(output);
         }
 
-        protected internal void SetBank(int pointer, int bankToSwitchTo)
+        protected internal void SetBank(int offset, int bankToSwitchTo)
         {
             Output.SetBank(bankToSwitchTo);
-            OnBankSwitched(pointer);
+            OnBankSwitched(offset);
         }
 
-        private void OnBankSwitched(int pointer)
+        private void OnBankSwitched(int offset)
         {
             WriteEmptyLine();
-            WriteSpecialLine("org", pointer);
+            WriteSpecialLine("org", offset);
             WriteEmptyLine();
         }
 

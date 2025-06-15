@@ -10,54 +10,54 @@ namespace Diz.LogWriter
 
         protected override void Execute()
         {
-            var size = LogCreator.GetRomSize();
+            var romSize = LogCreator.GetRomSize();
             BankManager = new AsmCreationBankManager
             {
                 LogCreator = LogCreator,
             };
 
             // perf: this is the meat of the export, takes a while
-            for (var pointer = 0; pointer < size;)
+            for (var offset = 0; offset < romSize;)
             {
-                WriteAddress(ref pointer);
+                WriteAddress(ref offset);
             }
         }
 
         // write one line of the assembly output
         // address is a "PC address" i.e. offset into the ROM.
         // not a SNES address.
-        private void WriteAddress(ref int pointer)
+        private void WriteAddress(ref int offset)
         {
-            BankManager.SwitchBanksIfNeeded(pointer);
+            BankManager.SwitchBanksIfNeeded(offset);
 
-            WriteBlankLineIfStartingNewParagraph(pointer);
-            var lineTxt = LogCreator.LineGenerator.GenerateNormalLine(pointer);
+            WriteBlankLineIfStartingNewParagraph(offset);
+            var lineTxt = LogCreator.LineGenerator.GenerateNormalLine(offset);
             LogCreator.WriteLine(lineTxt);
-            LogCreator.DataErrorChecking.CheckForErrorsAt(pointer);
-            WriteBlankLineIfEndPoint(pointer);
+            LogCreator.DataErrorChecking.CheckForErrorsAt(offset);
+            WriteBlankLineIfEndPoint(offset);
 
-            pointer += LogCreator.GetLineByteLength(pointer);
+            offset += LogCreator.GetLineByteLength(offset);
         }
 
-        private void WriteBlankLineIfStartingNewParagraph(int pointer)
+        private void WriteBlankLineIfStartingNewParagraph(int offset)
         {
             // skip if we're in the middle of a pointer table
-            if (Data.GetFlag(pointer) is FlagType.Pointer16Bit or FlagType.Pointer24Bit or FlagType.Pointer32Bit)
+            if (Data.GetFlag(offset) is FlagType.Pointer16Bit or FlagType.Pointer24Bit or FlagType.Pointer32Bit)
                 return;
 
-            if (Data.IsLocationAReadPoint(pointer) || AreAnyLabelsPresentAt(pointer)) 
+            if (Data.IsLocationAReadPoint(offset) || AreAnyLabelsPresentAt(offset)) 
                 LogCreator.WriteEmptyLine();
         }
 
-        private bool AreAnyLabelsPresentAt(int pointer)
+        private bool AreAnyLabelsPresentAt(int offset)
         {
-            var snesAddress = Data.ConvertPCtoSnes(pointer);
+            var snesAddress = Data.ConvertPCtoSnes(offset);
             return Data.Labels.GetLabel(snesAddress)?.Name.Length > 0;
         }
 
-        private void WriteBlankLineIfEndPoint(int pointer)
+        private void WriteBlankLineIfEndPoint(int offset)
         {
-            if (!Data.IsLocationAnEndPoint(pointer))
+            if (!Data.IsLocationAnEndPoint(offset))
                 return;
 
             LogCreator.WriteEmptyLine();

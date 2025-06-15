@@ -10,24 +10,28 @@ namespace Diz.LogWriter
         public ILogCreatorDataSource<IData> Data => LogCreator?.Data;
         public int CurrentBank { get; protected set; } = -1;
 
-        public void SwitchBanksIfNeeded(int pointer)
+        public void SwitchBanksIfNeeded(int offset)
         {
-            var snesAddress = Data.ConvertPCtoSnes(pointer);
+            var snesAddress = Data.ConvertPCtoSnes(offset);
             var newBank = RomUtil.GetBankFromSnesAddress(snesAddress);
 
             if (newBank != CurrentBank)
-                SwitchBank(pointer, newBank, snesAddress);
+                SwitchBank(offset, newBank);
         }
 
-        private void SwitchBank(int pointer, int newBank, int snesAddress)
+        private void SwitchBank(int offset, int newBank)
         {
-            LogCreator.SetBank(pointer, newBank);
+            LogCreator.SetBank(offset, newBank);
             CurrentBank = newBank;
+            
+            CheckForBankCrossError(offset);
+        }
 
-            if (snesAddress % Data.GetBankSize() == 0)
-                return;
-
-            LogCreator.OnErrorReported(pointer, "An instruction crossed a bank boundary.");
+        private void CheckForBankCrossError(int offset)
+        {
+            var snesAddress = Data.ConvertPCtoSnes(offset);
+            if (snesAddress % Data.GetBankSize() != 0)
+                LogCreator.OnErrorReported(offset, "An instruction crossed a bank boundary.");
         }
     }
 }

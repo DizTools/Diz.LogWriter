@@ -28,28 +28,29 @@ internal class LogCreatorTempLabelGenerator
 
     public void GenerateTemporaryLabels()
     {
-        for (var pointer = 0; pointer < LogCreator.GetRomSize(); pointer += LogCreator.GetLineByteLength(pointer))
+        var romSize = LogCreator.GetRomSize();
+        for (var offset = 0; offset < romSize; offset += LogCreator.GetLineByteLength(offset))
         {
-            GenerateTempLabelIfNeededAt(pointer);
+            GenerateTempLabelIfNeededAt(offset);
         }
     }
 
-    private void GenerateTempLabelIfNeededAt(int pcOffset)
+    private void GenerateTempLabelIfNeededAt(int offset)
     {
-        var snes = GetAddressOfAnyUsefulLabelsAt(pcOffset);
-        if (snes == -1)
+        var snesAddress = GetAddressOfAnyUsefulLabelsAt(offset);
+        if (snesAddress == -1)
             return;
 
-        var labelName = GenerateGenericTempLabel(snes);
-        Data.TemporaryLabelProvider.AddTemporaryLabel(snes, new Label {Name = labelName});
+        var labelName = GenerateGenericTempLabel(snesAddress);
+        Data.TemporaryLabelProvider.AddTemporaryLabel(snesAddress, new Label {Name = labelName});
     }
 
-    private int GetAddressOfAnyUsefulLabelsAt(int pcOffset)
+    private int GetAddressOfAnyUsefulLabelsAt(int offset)
     {
         if (GenerateAllUnlabeled)
-            return Data.ConvertPCtoSnes(pcOffset);
+            return Data.ConvertPCtoSnes(offset);
 
-        var flag = Data.Data.GetSnesApi().GetFlag(pcOffset);
+        var flag = Data.Data.GetSnesApi().GetFlag(offset);
         var usefulToCreateLabelFrom = flag is 
                 FlagType.Opcode or 
                 FlagType.Pointer16Bit or 
@@ -59,16 +60,16 @@ internal class LogCreatorTempLabelGenerator
         if (!usefulToCreateLabelFrom)
             return -1;
 
-        var snesIa = Data.GetIntermediateAddressOrPointer(pcOffset);
+        var snesIa = Data.GetIntermediateAddressOrPointer(offset);
         var pc = Data.ConvertSnesToPc(snesIa);
         return pc >= 0 ? snesIa : -1;
     }
 
-    private string GenerateGenericTempLabel(int snes)
+    private string GenerateGenericTempLabel(int snesAddress)
     {
-        var pcOffset = Data.ConvertSnesToPc(snes);
+        var pcOffset = Data.ConvertSnesToPc(snesAddress);
         var prefix = RomUtil.TypeToLabel(Data.Data.GetSnesApi().GetFlag(pcOffset));
-        var labelAddress = Util.ToHexString6(snes);
+        var labelAddress = Util.ToHexString6(snesAddress);
         return $"{prefix}_{labelAddress}";
     }
 }
