@@ -82,9 +82,10 @@ internal class LogCreatorTempLabelGenerator
         if (useHints)
         {
             // figure out if there's anything interesting going on that we might want to change the label somewhat:
+            var destinationIsOpcode = snesData.GetFlag(offsetToGenerateLabelAt) == FlagType.Opcode;
             
-            // A. was this a JSR or JSL?
-            if (originWasOpcode)
+            // A. was this a JSR or JSL, and is the destination location reached?
+            if (originWasOpcode && destinationIsOpcode)
             {
                 var originRomByte = snesData.GetRomByte(originOffset);
                 prefix = originRomByte switch
