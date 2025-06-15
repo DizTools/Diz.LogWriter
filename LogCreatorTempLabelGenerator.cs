@@ -35,41 +35,75 @@ internal class LogCreatorTempLabelGenerator
         }
     }
 
-    private void GenerateTempLabelIfNeededAt(int offset)
+    private void GenerateTempLabelIfNeededAt(int originOffset)
     {
-        var snesAddress = GetAddressOfAnyUsefulLabelsAt(offset);
-        if (snesAddress == -1)
+        var snesData = Data.Data.GetSnesApi();
+        if (snesData == null)
             return;
+        
+        var snesAddressToGenerateLabelAt = -1;
+        var useHints = false;
+        
+        // 1. treat our offset as the origin, check if it references an IA that is interesting to make a label from: 
+        var flag = snesData.GetFlag(originOffset);
+        var originWasOpcode = flag == FlagType.Opcode;
+        var destinationIaMightBeInteresting = originWasOpcode || flag is 
+            FlagType.Pointer16Bit or 
+            FlagType.Pointer24Bit or 
+            FlagType.Pointer32Bit;
 
-        var labelName = GenerateGenericTempLabel(snesAddress);
-        Data.TemporaryLabelProvider.AddTemporaryLabel(snesAddress, new Label {Name = labelName});
-    }
+        if (destinationIaMightBeInteresting)
+        {
+            var snesDestinationIa = Data.GetIntermediateAddressOrPointer(originOffset);
+            var offsetOfIa = Data.ConvertSnesToPc(snesDestinationIa);
+            if (offsetOfIa != -1)
+            {
+                snesAddressToGenerateLabelAt = snesDestinationIa;
+                useHints = true;
+            }
+        }
 
-    private int GetAddressOfAnyUsefulLabelsAt(int offset)
-    {
-        if (GenerateAllUnlabeled)
-            return Data.ConvertPCtoSnes(offset);
+        // 2. our origin address doesn't have anything interesting going on.
+        // should we add a label for the origin address anyway? (in case we want to see ALL labels [not typical but an option])
+        if (snesAddressToGenerateLabelAt == -1 && GenerateAllUnlabeled)
+        {
+            snesAddressToGenerateLabelAt = Data.ConvertPCtoSnes(originOffset);
+            useHints = false;
+        }
+        
+        // no reason to create any new labels, bail
+        if (snesAddressToGenerateLabelAt == -1)
+            return; 
 
-        var flag = Data.Data.GetSnesApi().GetFlag(offset);
-        var usefulToCreateLabelFrom = flag is 
-                FlagType.Opcode or 
-                FlagType.Pointer16Bit or 
-                FlagType.Pointer24Bit or 
-                FlagType.Pointer32Bit;
+        // OK, we have a 
+        var prefix = "";
+        var offsetToGenerateLabelAt = Data.ConvertSnesToPc(snesAddressToGenerateLabelAt);
 
-        if (!usefulToCreateLabelFrom)
-            return -1;
+        if (useHints)
+        {
+            // figure out if there's anything interesting going on that we might want to change the label somewhat:
+            
+            // A. was this a JSR or JSL?
+            if (originWasOpcode)
+            {
+                var originRomByte = snesData.GetRomByte(originOffset);
+                prefix = originRomByte switch
+                {
+                    0x20 => "CODE_FN",                      // JSR
+                    0x22 => "CODE_FL",                      // JML
+                    _ => ""
+                };
+            }
+        }
 
-        var snesIa = Data.GetIntermediateAddressOrPointer(offset);
-        var pc = Data.ConvertSnesToPc(snesIa);
-        return pc >= 0 ? snesIa : -1;
-    }
-
-    private string GenerateGenericTempLabel(int snesAddress)
-    {
-        var pcOffset = Data.ConvertSnesToPc(snesAddress);
-        var prefix = RomUtil.TypeToLabel(Data.Data.GetSnesApi().GetFlag(pcOffset));
-        var labelAddress = Util.ToHexString6(snesAddress);
-        return $"{prefix}_{labelAddress}";
+        // this is like "CODE" etc
+        if (prefix.Length == 0)
+            // 2. nothing special, just generate a generic label for this like CODE_xxxx or DATA_xxx
+            prefix = RomUtil.TypeToLabel(snesData.GetFlag(offsetToGenerateLabelAt));
+        
+        var labelAddress = Util.ToHexString6(snesAddressToGenerateLabelAt);
+        var labelName = $"{prefix}_{labelAddress}";
+        
+        Data.TemporaryLabelProvider.AddOrReplaceTemporaryLabel(snesAddressToGenerateLabelAt, new Label {Name = labelName});
     }
 }
