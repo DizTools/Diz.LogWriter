@@ -179,19 +179,19 @@ namespace Diz.LogWriter
             {
                 case 2:
                     // here's a tricky Diz-specific thing.
-                    // at this address, we only have the two bytes of the IA to work with (since this is a 16-bit pointer)
-                    // always (maybe... almost always? can't think of a case otherwise), what we want for the bank is the
-                    // SAME bank as where the pointer is sitting.  what we DON'T want is the overridden bank (the one you can type in the UI).
-                    
-                    // older Diz behavior, user has to specify the bank we'll use for the label address
-                    var bankFromUser = data.GetDataBank(offset) << 16;
-                    
-                    // newer Diz Behavior:
-                    // this is better (as long as it's valid) because it will insert the correct labels into the pointer table assembly output
+                    // at this address, we only have the two bytes of the IA to work with (since this is a 16-bit pointer).
+                    // we need to come up with a bank# to use for this.
+                    //
+                    // which one to use?
+                    // 1. almost always: we want to use the SAME bank as where the pointer is sitting. but we don't want to force the user to use that.
                     var autoDetectedBank = RomUtil.GetBankFromSnesAddress(data.ConvertPCtoSnes(offset));
                     
-                    // If the user overrode the bank in the pointer table, OK, we'll use that.
-                    // sometimes useful for things like pointer tables to other banks.
+                    // except... 2. we'll still allow the user to manually specify the bank by typing into the grid.
+                    // this is useful if the pointers are going to RAM addresses [ex: Chrono Trigger],
+                    // or, for places where we're using another bank in the code [ex: Megaman X text code]
+                    var bankFromUser = data.GetDataBank(offset);
+
+                    // Use the autodetected bank# unless the user excplicitly typed in a non-zero value.
                     var bankToUse = bankFromUser != 0 ? bankFromUser : autoDetectedBank;
                     
                     ia = (bankToUse << 16) | data.GetRomWordUnsafe(offset);
