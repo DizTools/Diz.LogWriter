@@ -212,11 +212,14 @@ namespace Diz.LogWriter
                     break;
             }
 
-            if (data.ConvertSnesToPc(ia) >= 0)
-            {
-                var labelName = data.Labels.GetLabelName(ia);
-                if (labelName != "")
-                    param = labelName;
+            if (data.ConvertSnesToPc(ia) < 0) 
+                return string.Format(format, param);
+            
+            var labelName = data.Labels.GetLabelName(ia);
+                
+            // check: filter +/- labels here, like "+", "-", "++", "--", etc
+            if (labelName != "" && !RomUtil.IsValidPlusMinusLabel(labelName)) {
+                param = labelName;
             }
 
             return string.Format(format, param);
