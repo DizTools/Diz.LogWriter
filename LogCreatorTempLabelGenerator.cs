@@ -54,7 +54,8 @@ internal class LogCreatorTempLabelGenerator
         public int DestOffset;
         
         public int Depth = 1;    // depth of 1 is "+", 2 is "++", etc
-        public string Label => new string('+', Depth);
+        public string Label => new string(IsForwardBranch ? '+' : '-', Depth);
+        public bool IsForwardBranch = true;
     }
 
     private void EmitInternalPlusMinusBranches(List<Branch> validBranches)
@@ -68,18 +69,26 @@ internal class LogCreatorTempLabelGenerator
             .OrderBy(b => b.SrcOffset)
             .ToList();
         
-        // TODO: do backwards branches too
+        var backwardBranches = validBranches
+            .Where(b => b.DestOffset < b.SrcOffset)
+            .OrderByDescending(b => b.SrcOffset)
+            .ToList();
         
-        // var backwardBranches = validBranches.Where(b => b.DestOffset < b.SrcOffset).ToList();
+        GenerateLocalPlusMinusBranchLabelsOneDirection(forwardBranches, directionIsForward: true);
+        GenerateLocalPlusMinusBranchLabelsOneDirection(backwardBranches, directionIsForward: false);
+    }
 
+    private void GenerateLocalPlusMinusBranchLabelsOneDirection(List<Branch> forwardBranches, bool directionIsForward)
+    {
         var states = new List<BranchState>();
-        
         foreach (var branch in forwardBranches)
         {
             // 1. remove any branches we moved past before processing this next branch:
             var startingOffset = branch.SrcOffset;
             states = states
-                .Where(x => x.DestOffset > startingOffset)
+                .Where(x => directionIsForward 
+                    ? x.DestOffset > startingOffset 
+                    : x.DestOffset < startingOffset)
                 .ToList();
             
             // 2. what label should we use for this branch?
@@ -87,13 +96,8 @@ internal class LogCreatorTempLabelGenerator
             var targetDepth = 1;
             BranchState? stateToUse = null;
 
-            foreach (var state in statesSortedByDepth)
+            foreach (var state in statesSortedByDepth.Where(state => state.DestOffset == branch.DestOffset))
             {
-                // is there an open branch that has the same destination address already? if so use that, and,
-                // adopt the existing depth.
-                if (state.DestOffset != branch.DestOffset) 
-                    continue;
-                
                 // found an existing one! use that.
                 stateToUse = state;
                 targetDepth = state.Depth;
@@ -102,12 +106,8 @@ internal class LogCreatorTempLabelGenerator
 
             if (stateToUse == null)
             {
-                foreach (var state in statesSortedByDepth)
+                foreach (var _ in statesSortedByDepth.TakeWhile(state => state.Depth == targetDepth))
                 {
-                    // there isn't an existing one. do we have a gap in the depths?
-                    if (state.Depth != targetDepth)
-                        break; // yes, gap.
-                
                     // keep looking further down
                     targetDepth++;
                 }
@@ -116,6 +116,7 @@ internal class LogCreatorTempLabelGenerator
                 //    now add a new branch state for this branch at that depth
                 var newState = new BranchState
                 {
+                    IsForwardBranch = directionIsForward,
                     Depth = targetDepth,
                     DestOffset = branch.DestOffset,
                 };
