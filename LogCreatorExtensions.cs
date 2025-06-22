@@ -23,9 +23,9 @@ namespace Diz.LogWriter
         public static string CreateAssemblyFormattedTextLine(string rawStr)
         {
             // important: Asar will not accept null characters printed inside quoted text. so we need to break up text lines.
-
+            // also, asar seems to have issues with exclamation points in text
             bool IsPrintableAsciiCharacter(char c) => 
-                c >= 32 && c <= 127 && c != '"';
+                c >= 32 && c <= 127 && c != '"' && c != '!';
 
             var outputStr = new StringBuilder("db ");
             var inQuotedSection = false;
