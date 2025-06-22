@@ -184,11 +184,15 @@ namespace Diz.LogWriter
                     // SAME bank as where the pointer is sitting.  what we DON'T want is the overridden bank (the one you can type in the UI).
                     
                     // older Diz behavior, user has to specify the bank we'll use for the label address
-                    // var bankToUse = data.GetDataBank(offset) << 16;
+                    var bankFromUser = data.GetDataBank(offset) << 16;
                     
                     // newer Diz Behavior:
                     // this is better (as long as it's valid) because it will insert the correct labels into the pointer table assembly output
-                    var bankToUse = RomUtil.GetBankFromSnesAddress(data.ConvertPCtoSnes(offset));
+                    var autoDetectedBank = RomUtil.GetBankFromSnesAddress(data.ConvertPCtoSnes(offset));
+                    
+                    // If the user overrode the bank in the pointer table, OK, we'll use that.
+                    // sometimes useful for things like pointer tables to other banks.
+                    var bankToUse = bankFromUser != 0 ? bankFromUser : autoDetectedBank;
                     
                     ia = (bankToUse << 16) | data.GetRomWordUnsafe(offset);
                     
