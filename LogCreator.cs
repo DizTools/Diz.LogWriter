@@ -55,10 +55,17 @@ namespace Diz.LogWriter
             {
                 CreateTemporaryLabels();
                 
+                // optional: performance only: build a cache of the temp labels + real labels, so it's not computed on the fly as often
+                // do this after generating any temporary labels/etc
+                LockLabelsCache();
+                
                 WriteAllOutput();
             }
             finally
             {
+                // optional: performance only: remove the labels cache
+                UnlockLabelsCache();
+                
                 // MODIFIES UNDERLYING DATA. WE MUST ALWAYS MAKE SURE TO UNDO THIS
                 RemoveTemporaryLabels();
             }
@@ -69,6 +76,16 @@ namespace Diz.LogWriter
 
             OnProgressChanged(ProgressEvent.Status.Done);
             return result;
+        }
+
+        private void LockLabelsCache()
+        {
+            Data.TemporaryLabelProvider.LockLabelsCache();
+        }
+
+        private void UnlockLabelsCache()
+        {
+            Data.TemporaryLabelProvider.UnlockLabelsCache();
         }
 
         private void RemoveTemporaryLabels()
