@@ -142,6 +142,7 @@ namespace Diz.LogWriter
                 {
                     LogCreator = this,
                     GenerateAllUnlabeled = Settings.Unlabeled == LogWriterSettings.FormatUnlabeled.ShowAll,
+                    ShouldGeneratePlusMinusLabels = Settings.GeneratePlusMinusLabels,
                 };
             }
 

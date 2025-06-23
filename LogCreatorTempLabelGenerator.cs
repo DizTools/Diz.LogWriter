@@ -17,6 +17,8 @@ internal class LogCreatorTempLabelGenerator
     public LogCreator LogCreator { get; init; }
     public ILogCreatorDataSource<IData> Data => LogCreator.Data;
     public bool GenerateAllUnlabeled { get; init; }
+    
+    public bool ShouldGeneratePlusMinusLabels { get; init; }
         
     public void ClearTemporaryLabels()
     {
@@ -30,8 +32,9 @@ internal class LogCreatorTempLabelGenerator
         GenerateSectionTempLabels();
         
         // 2. generate ONLY +/- labels
-        //    do this FIRST because other stuff can overwrite them later
-        GeneratePlusMinusLabels();
+        //    do this second because we'll selectively overwrite some types of labels (like "CODE_")
+        if (ShouldGeneratePlusMinusLabels)
+            GeneratePlusMinusLabels();
     }
 
     private void GenerateSectionTempLabels()
