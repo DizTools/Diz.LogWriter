@@ -213,7 +213,8 @@ internal class LogCreatorTempLabelGenerator
             var isLowPriTempLabel = 
                 existingLabel != null && 
                 existingLabel.Name.StartsWith("CODE_") &&         // allowed to overwrite these
-                !existingLabel.Name.StartsWith("CODE_F") &&       // but not these
+                !existingLabel.Name.StartsWith("CODE_FN") &&       // but not these
+                !existingLabel.Name.StartsWith("CODE_FL") &&       // but not these
                 !existingLabel.Name.StartsWith("CODE_J");
             
             var isPlusMinusHandwrittenLabel = RomUtil.IsValidPlusMinusLabel(existingLabel?.Name ?? "");
@@ -309,23 +310,24 @@ internal class LogCreatorTempLabelGenerator
         var existingLabel = Data.TemporaryLabelProvider.GetLabel(snesAddressToGenerateLabelAt);
         if (existingLabel != null)
         {
-            var existingLabelIsFn = existingLabel.Name.StartsWith("CODE_F");
+            var existingLabelIsFn = existingLabel.Name.StartsWith("CODE_FN") || existingLabel.Name.StartsWith("CODE_FL");
             var existingLabelIsJmp = existingLabel.Name.StartsWith("CODE_J");
 
             // if things JMP and JSR to the same location, let the CODE_Fx_xxxxxx label take priority
-            var skipOtherChecks = prefix.StartsWith("CODE_F") && existingLabelIsJmp;
+            var prefixLabelIsFn = prefix.StartsWith("CODE_FN") || prefix.StartsWith("CODE_FL");
+            var skipOtherChecks = prefixLabelIsFn && existingLabelIsJmp;
             if (!skipOtherChecks)
             {
                 var existingLabelIsHighPriority = 
-                    existingLabelIsFn || 
-                    existingLabelIsJmp;     // like "CODE_FN" or "CODE_FL", or "CODE_JM" or "CODE_JL"
+                    existingLabelIsFn ||    // like "CODE_FN" or "CODE_FL"
+                    existingLabelIsJmp;     // like "CODE_JM" or "CODE_JL"
             
                 if (existingLabelIsHighPriority)
                     return;   
             }
         }
 
-        // this is like "CODE_", "DATA_", "EMPTY_" etc
+        // this is going to generate labels like "CODE_", "DATA_", "EMPTY_" etc
         if (prefix.Length == 0)
             // 2. nothing special, just generate a generic label for this like CODE_xxxx or DATA_xxx
             prefix = RomUtil.TypeToLabel(snesData.GetFlag(offsetToGenerateLabelAt));
