@@ -2,7 +2,9 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using CsvHelper;
+using Diz.Core.Interfaces;
 using Diz.LogWriter.assemblyGenerators;
 using JetBrains.Annotations;
 
@@ -11,6 +13,14 @@ namespace Diz.LogWriter
     public abstract class AsmStepExtraLabelOutputBase : AsmCreationBase
     {
         public LabelTracker LabelTracker { get; init; }
+        
+        public static IOrderedEnumerable<int> GetLabelSnesAddressesSorted(IReadOnlyLabelProvider readOnlyLabelProvider)
+        {
+            // keep these sorted so that the output is consistent
+            return readOnlyLabelProvider.Labels
+                .Select(x=>x.Key)
+                .OrderBy(x=>x);
+        }
     }
 
     // TODO: we can probably refactor/recombine a few of these related classes together
@@ -52,9 +62,10 @@ namespace Diz.LogWriter
         {
             LogCreator.SwitchOutputStream(OutputFilename);
             OutputHeader();
-            foreach (var (snesAddress, _) in Data.Labels.Labels)
+            
+            foreach (var labelSnesAddress in GetLabelSnesAddressesSorted(Data.Labels))
             {
-                WriteLabel(snesAddress);
+                WriteLabel(labelSnesAddress);
             }
         }
 
@@ -159,13 +170,13 @@ namespace Diz.LogWriter
             LogCreator.WriteLine("\n");
             LogCreator.WriteLine("[comments]");
             
-            foreach (var (snesAddress, _) in Data.Labels.Labels)
+            foreach (var labelSnesAddress in GetLabelSnesAddressesSorted(Data.Labels))
             {
-                var commentText = Data.GetCommentText(snesAddress);
+                var commentText = Data.GetCommentText(labelSnesAddress);
                 if (commentText.Length == 0)
                     continue;
                 
-                WriteLineBsnesFormattedAddressAndText(snesAddress, commentText);
+                WriteLineBsnesFormattedAddressAndText(labelSnesAddress, commentText);
             }
         }
         
