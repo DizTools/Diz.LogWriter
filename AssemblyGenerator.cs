@@ -7,83 +7,82 @@ using Diz.LogWriter.util;
 
 // ReSharper disable ParameterOnlyUsedForPreconditionCheck.Global
 
-namespace Diz.LogWriter
+namespace Diz.LogWriter;
+
+public interface IAssemblyPartialGenerator
 {
-    public interface IAssemblyPartialGenerator
-    {
-        string Emit(int? offset, int? lengthOverride);
-    }
+    string Emit(int? offset, int? lengthOverride);
+}
 
-    public interface ILogCreatorForGenerator
-    { 
-        public LogWriterSettings Settings { get; }
-        ILogCreatorDataSource<IData> Data { get; }
-        void OnLabelVisited(int snesAddress);
+public interface ILogCreatorForGenerator
+{ 
+    public LogWriterSettings Settings { get; }
+    ILogCreatorDataSource<IData> Data { get; }
+    void OnLabelVisited(int snesAddress);
 
-        int GetLineByteLength(int offset);
-    }
+    int GetLineByteLength(int offset);
+}
     
-    public abstract class AssemblyPartialLineGenerator : IAssemblyPartialGenerator
+public abstract class AssemblyPartialLineGenerator : IAssemblyPartialGenerator
+{
+    public ILogCreatorForGenerator LogCreator { get; set; }
+        
+    protected ILogCreatorDataSource<IData> Data => LogCreator.Data;
+    protected ISnesApi<IData> SnesApi => Data.Data.GetSnesApi();
+
+    public string Token { get; init; } = "";
+    public int DefaultLength { get; init; }
+    public bool RequiresToken { get; init; } = true;
+    public bool UsesOffset { get; init; } = true;
+
+    public string Emit(int? offset, int? lengthOverride)
     {
-        public ILogCreatorForGenerator LogCreator { get; set; }
-        
-        protected ILogCreatorDataSource<IData> Data => LogCreator.Data;
-        protected ISnesApi<IData> SnesApi => Data.Data.GetSnesApi();
+        var finalLength = lengthOverride ?? DefaultLength;
 
-        public string Token { get; init; } = "";
-        public int DefaultLength { get; init; }
-        public bool RequiresToken { get; init; } = true;
-        public bool UsesOffset { get; init; } = true;
+        Validate(offset, finalLength);
 
-        public string Emit(int? offset, int? lengthOverride)
-        {
-            var finalLength = lengthOverride ?? DefaultLength;
-
-            Validate(offset, finalLength);
-
-            if (!UsesOffset) 
-                return Generate(finalLength);
+        if (!UsesOffset) 
+            return Generate(finalLength);
             
-            Debug.Assert(offset != null);
-            return Generate(offset.Value, finalLength);
-        }
+        Debug.Assert(offset != null);
+        return Generate(offset.Value, finalLength);
+    }
 
-        protected virtual string Generate(int length)
-        {
-            throw new InvalidDataException("Invalid Generate() call: Can't call without an offset.");
-        }
+    protected virtual string Generate(int length)
+    {
+        throw new InvalidDataException("Invalid Generate() call: Can't call without an offset.");
+    }
         
-        protected virtual string Generate(int offset, int length)
-        {
-            // NOTE: if you get here (without an override in a derived class)
-            // it means the client code should have instead been calling the other Generate(length) overload
-            // directly. for now, we'll gracefully handle it, but client code should try and be better about it
-            // eventually.
+    protected virtual string Generate(int offset, int length)
+    {
+        // NOTE: if you get here (without an override in a derived class)
+        // it means the client code should have instead been calling the other Generate(length) overload
+        // directly. for now, we'll gracefully handle it, but client code should try and be better about it
+        // eventually.
             
-            return Generate(length);
-            // throw new InvalidDataException("Invalid Generate() call: Can't call with offset.");
-        }
+        return Generate(length);
+        // throw new InvalidDataException("Invalid Generate() call: Can't call with offset.");
+    }
         
-        // call Validate() before doing anything in each Emit()
-        // if length is non-zero, use that as our length, if not we use the default length
-        protected virtual void Validate(int? offset, int finalLength)
-        {
-            if (finalLength == 0)
-                throw new InvalidDataException("Assembly output component needed a length but received none.");
+    // call Validate() before doing anything in each Emit()
+    // if length is non-zero, use that as our length, if not we use the default length
+    protected virtual void Validate(int? offset, int finalLength)
+    {
+        if (finalLength == 0)
+            throw new InvalidDataException("Assembly output component needed a length but received none.");
 
-            if (RequiresToken && string.IsNullOrEmpty(Token))
-                throw new InvalidDataException("Assembly output component needed a token but received none.");
+        if (RequiresToken && string.IsNullOrEmpty(Token))
+            throw new InvalidDataException("Assembly output component needed a token but received none.");
 
-            // we should throw exceptions both ways, for now though we'll let it slide if we were passed in
-            // an offset and we don't need it.
-            var hasOffset = offset != null;
-            //if (UsesOffset)
-            //{
-                if (UsesOffset != hasOffset)
-                    throw new InvalidDataException(UsesOffset
-                        ? "Assembly output component needed an offset but received none."
-                        : "Assembly output component doesn't use an offset but we were provided one anyway.");
-            //}
-        }
+        // we should throw exceptions both ways, for now though we'll let it slide if we were passed in
+        // an offset and we don't need it.
+        var hasOffset = offset != null;
+        //if (UsesOffset)
+        //{
+        if (UsesOffset != hasOffset)
+            throw new InvalidDataException(UsesOffset
+                ? "Assembly output component needed an offset but received none."
+                : "Assembly output component doesn't use an offset but we were provided one anyway.");
+        //}
     }
 }

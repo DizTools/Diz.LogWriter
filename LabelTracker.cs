@@ -2,53 +2,52 @@
 using Diz.Core.Interfaces;
 using Diz.LogWriter.util;
 
-namespace Diz.LogWriter
+namespace Diz.LogWriter;
+
+public class LabelTracker
 {
-    public class LabelTracker
+
+    private readonly ILogCreatorForGenerator logCreator;
+    public ILogCreatorDataSource<IData> Data => logCreator?.Data;
+    public List<int> VisitedLabelSnesAddresses { get; } = new();
+        
+    private Dictionary<int, IReadOnlyLabel> cachedUnvisitedLabels;
+        
+    public LabelTracker(ILogCreatorForGenerator logCreator)
     {
+        this.logCreator = logCreator;
+    }
 
-        private readonly ILogCreatorForGenerator logCreator;
-        public ILogCreatorDataSource<IData> Data => logCreator?.Data;
-        public List<int> VisitedLabelSnesAddresses { get; } = new();
-        
-        private Dictionary<int, IReadOnlyLabel> cachedUnvisitedLabels;
-        
-        public LabelTracker(ILogCreatorForGenerator logCreator)
+    public Dictionary<int, IReadOnlyLabel> UnvisitedLabels
+    {
+        get
         {
-            this.logCreator = logCreator;
+            CacheUnvisitedLabels();
+            return cachedUnvisitedLabels;
         }
+    }
 
-        public Dictionary<int, IReadOnlyLabel> UnvisitedLabels
-        {
-            get
-            {
-                CacheUnvisitedLabels();
-                return cachedUnvisitedLabels;
-            }
-        }
+    public void OnLabelVisited(int snesAddress)
+    {
+        VisitedLabelSnesAddresses.Add(snesAddress);
+        cachedUnvisitedLabels = null;
+    }
 
-        public void OnLabelVisited(int snesAddress)
-        {
-            VisitedLabelSnesAddresses.Add(snesAddress);
-            cachedUnvisitedLabels = null;
-        }
-
-        private void CacheUnvisitedLabels()
-        {
-            if (cachedUnvisitedLabels != null) // pretty sure this is the right thing to do?
-                return;
+    private void CacheUnvisitedLabels()
+    {
+        if (cachedUnvisitedLabels != null) // pretty sure this is the right thing to do?
+            return;
             
-            cachedUnvisitedLabels = new Dictionary<int, IReadOnlyLabel>();
-            if (VisitedLabelSnesAddresses == null)
-                return;
+        cachedUnvisitedLabels = new Dictionary<int, IReadOnlyLabel>();
+        if (VisitedLabelSnesAddresses == null)
+            return;
 
-            foreach (var (snesAddress, label) in Data.Labels.Labels)
-            {
-                if (VisitedLabelSnesAddresses.Contains(snesAddress))
-                    continue;
+        foreach (var (snesAddress, label) in Data.Labels.Labels)
+        {
+            if (VisitedLabelSnesAddresses.Contains(snesAddress))
+                continue;
 
-                cachedUnvisitedLabels.Add(snesAddress, label);
-            }
+            cachedUnvisitedLabels.Add(snesAddress, label);
         }
     }
 }
