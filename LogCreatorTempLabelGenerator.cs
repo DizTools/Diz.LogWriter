@@ -243,6 +243,8 @@ internal class LogCreatorTempLabelGenerator
         var snesAddressToGenerateLabelAt = -1;
         var useHints = false;
         
+        var snesSrcAddress = Data.ConvertPCtoSnes(originOffset);    // address of the opcode we're starting from
+        
         // 1. treat our offset as the origin, check if it references an IA that is interesting to make a label from: 
         var flag = snesData.GetFlag(originOffset);
         var originWasOpcode = flag == FlagType.Opcode;
@@ -266,7 +268,7 @@ internal class LogCreatorTempLabelGenerator
         // should we add a label for the origin address anyway? (in case we want to see ALL labels [not typical but an option])
         if (snesAddressToGenerateLabelAt == -1 && GenerateAllUnlabeled)
         {
-            snesAddressToGenerateLabelAt = Data.ConvertPCtoSnes(originOffset);
+            snesAddressToGenerateLabelAt = snesSrcAddress;
             useHints = false;
         }
         
@@ -327,11 +329,20 @@ internal class LogCreatorTempLabelGenerator
             }
         }
 
-        // this is going to generate labels like "CODE_", "DATA_", "EMPTY_" etc
+        // no prefix generated above?
+        // well, then we're just going to generate an auto-generated label like "CODE_", "DATA_", "EMPTY_" etc
         if (prefix.Length == 0)
-            // 2. nothing special, just generate a generic label for this like CODE_xxxx or DATA_xxx
+        {
+            // final check: is there a reason we SHOULDN'T generate a generic label here?
+            // one case: we're referencing an instruction that explicitly wants there to be 
+            var srcComment = snesData.GetCommentText(snesSrcAddress);
+            var srcSpecialDirective = CpuUtils.ParseCommentSpecialDirective(srcComment);
+            if (srcSpecialDirective is { ForceNoLabel: true })
+                return;
+            
             prefix = RomUtil.TypeToLabel(snesData.GetFlag(offsetToGenerateLabelAt));
-        
+        }
+
         var labelAddress = Util.ToHexString6(snesAddressToGenerateLabelAt);
         var labelName = $"{prefix}_{labelAddress}";
         

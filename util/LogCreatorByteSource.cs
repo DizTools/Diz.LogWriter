@@ -33,8 +33,8 @@ public class LogCreatorByteSource : ILogCreatorDataSource<IData>
 
     public IReadOnlyLabelProvider Labels => Data.Labels;
     public string GetCommentText(int snesAddress) => Data.GetCommentText(snesAddress);
-    
-    
+    public string GetComment(int snesAddress) => Data.GetComment(snesAddress);
+
     public int GetInstructionLength(int offset) => SnesApi.GetInstructionLength(offset);
     public string GetInstruction(int offset) => SnesApi.GetInstruction(offset);
     public int ConvertPCtoSnes(int offset) => SnesApi.ConvertPCtoSnes(offset);
