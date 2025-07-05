@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO;
 using Diz.Core.export;
 using Diz.Core.Interfaces;
 using Diz.LogWriter.util;
@@ -17,6 +16,9 @@ public class LogCreator : ILogCreatorForGenerator
     public LabelTracker LabelTracker { get; private set; }
     private LogCreatorTempLabelGenerator LogCreatorTempLabelGenerator { get; set; }
     public DataErrorChecking DataErrorChecking { get; private set; }
+    
+    // mapping of defines (like "!max_hp") to values ("$FFFF") 
+    private Dictionary<string, string> visitedDefines = new();
 
     public class ProgressEvent
     {
@@ -59,6 +61,7 @@ public class LogCreator : ILogCreatorForGenerator
             // do this after generating any temporary labels/etc
             LockLabelsCache();
                 
+            // THIS IS IT: do the real stuff
             WriteAllOutput();
         }
         finally
@@ -135,6 +138,7 @@ public class LogCreator : ILogCreatorForGenerator
             
         LineGenerator = new LineGenerator(this, Settings.Format);
         LabelTracker = new LabelTracker(this);
+        visitedDefines = new Dictionary<string, string>();
             
         if (Settings.Unlabeled != LogWriterSettings.FormatUnlabeled.ShowNone)
         {
@@ -215,7 +219,6 @@ public class LogCreator : ILogCreatorForGenerator
             },
 
             // optional: same as above EXCEPT this time we'll do it as a .sym file, which BSNES's debugger can read
-
             new AsmStepExtraOutputBsneSymFile
             {
                 Enabled = Settings.IncludeUnusedLabels,
@@ -223,7 +226,14 @@ public class LogCreator : ILogCreatorForGenerator
 
                 LogCreator = this,
                 LabelTracker = LabelTracker,
-            }
+            },
+            
+            // output any defines if present:
+            new AsmDefinesGenerator
+            {
+                LogCreator = this,
+                Defines = visitedDefines,
+            },
         ];
     }
         
@@ -289,5 +299,57 @@ public class LogCreator : ILogCreatorForGenerator
     }
         
     public void OnLabelVisited(int snesAddress) => LabelTracker.OnLabelVisited(snesAddress);
+    public void OnInstructionVisited(int offset, CpuInstructionDataFormatted cpuInstructionDataFormatted)
+    {
+        // as instructions are generated, this will be called each time.
+        // we want to look for some things here:
+        
+        // 1. is this possibly a "!define" we want to output later?
+        RememberInstructionIfOverridden(offset, cpuInstructionDataFormatted);
+    }
+    
+    private void RememberInstructionIfOverridden(int offset, CpuInstructionDataFormatted instruction)
+    {
+        if (instruction.OverriddenOperand1.Length > 0 && instruction.OriginalNonOverridenOperand1 == instruction.OverriddenOperand1)
+            return;
+        
+        // if we use a define in the override, let's register it here.
+        // that way, we can output all defines in a list later.
+
+        // example of a valid mapping looks like this:
+        // OriginalNonOverridenOperand1 = "$03"
+        // OverriddenOperand1 = "!num_humans"
+
+        // validate: needs to be a hex number
+        var originalValue = instruction.OriginalNonOverridenOperand1;
+        if (!originalValue.StartsWith('$'))
+            return;
+        
+        // validate: needs to look like a !define and no expressions or other stuff
+        var defineName = instruction.OverriddenOperand1;
+        if (!defineName.StartsWith('!') ||  // must start with this
+            defineName.Contains('-') ||
+            defineName.Contains('+') ||
+            defineName.Contains('|') ||
+            defineName.Contains('[') ||
+            defineName.Contains(','))
+            return;
+        
+        // ok we appear to have found a valid define.
+        // let's add it if one doesn't exist.   if multiple exist in the project, they MUST all match or else
+        // the output assembly won't be byte-identical.  we'll note the error but that's about it.
+        var existingValue = visitedDefines.GetValueOrDefault(defineName);
+        if (existingValue != null)
+        {
+            // if already defined, it must be the same value, or it's an error
+            if (existingValue != originalValue)
+                OnErrorReported(offset, $"Define '{defineName}' redefined with different value, must fix or generated asm will be wrong.");
+            
+            return;
+        }
+
+        visitedDefines.Add(defineName, instruction.OriginalNonOverridenOperand1);
+    }
+
     public int GetLineByteLength(int offset) => Data.GetLineByteLength(offset, GetRomSize(), Settings.DataPerLine);
 }

@@ -73,7 +73,7 @@ public class LineGenerator
 
         return new LogCreatorLineFormatter.ColumnFormat
         {
-            LengthOverride = (originalColumn.LengthOverride != null) ? originalColumn.LengthOverride : GetGeneratorFor(originalColumn.Value).DefaultLength,
+            LengthOverride = originalColumn.LengthOverride ?? GetGeneratorFor(originalColumn.Value).DefaultLength,
             IgnoreOffset = ignoreOffset,
             Value = val,
         };

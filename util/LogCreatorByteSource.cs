@@ -36,7 +36,8 @@ public class LogCreatorByteSource : ILogCreatorDataSource<IData>
     public string GetComment(int snesAddress) => Data.GetComment(snesAddress);
 
     public int GetInstructionLength(int offset) => SnesApi.GetInstructionLength(offset);
-    public string GetInstruction(int offset) => SnesApi.GetInstruction(offset);
+    public string GetInstructionStr(int offset) => SnesApi.GetInstructionStr(offset);
+    public CpuInstructionDataFormatted GetInstructionData(int offset) => SnesApi.GetInstructionData(offset);
     public int ConvertPCtoSnes(int offset) => SnesApi.ConvertPCtoSnes(offset);
     public int ConvertSnesToPc(int offset) => SnesApi.ConvertSnesToPc(offset);
     public int GetIntermediateAddressOrPointer(int offset) => SnesApi.GetIntermediateAddressOrPointer(offset);

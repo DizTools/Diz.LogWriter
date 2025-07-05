@@ -41,7 +41,7 @@ public class AsmStepWriteUnvisitedLabels : AsmStepExtraLabelOutputBase
 
     private void WriteUnusedLabel(int snesAddress)
     {
-        // shove this in here even though what we SHOULD do is express it as a ROM offset.
+        // HACK: HACK: HACK: shove a SNES address in here even though what we SHOULD do is express it as a ROM offset.
         // however, we need to be able to pass in non-ROM SNES addresses.
         var stuffSnesAddressInOffset = snesAddress;
                 

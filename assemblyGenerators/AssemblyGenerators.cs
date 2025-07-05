@@ -85,44 +85,41 @@ public class AssemblyGenerateCode : AssemblyPartialLineGenerator
         if (snesApi == null)
             throw new NullReferenceException("SnesApi not present, can't generate line");
 
-        switch (snesApi.GetFlag(offset))
+        code = snesApi.GetFlag(offset) switch
         {
-            case FlagType.Opcode:
-                code = Data.GetInstruction(offset);
-                break;
-            case FlagType.Unreached:
-            case FlagType.Operand:
-            case FlagType.Data8Bit:
-            case FlagType.Graphics:
-            case FlagType.Music:
-            case FlagType.Empty:
-                code = snesApi.GetFormattedBytes(offset, 1, bytes);
-                break;
-            case FlagType.Data16Bit:
-                code = snesApi.GetFormattedBytes(offset, 2, bytes);
-                break;
-            case FlagType.Data24Bit:
-                code = snesApi.GetFormattedBytes(offset, 3, bytes);
-                break;
-            case FlagType.Data32Bit:
-                code = snesApi.GetFormattedBytes(offset, 4, bytes);
-                break;
-            case FlagType.Pointer16Bit:
-                code = snesApi.GeneratePointerStr(offset, 2);
-                break;
-            case FlagType.Pointer24Bit:
-                code = snesApi.GeneratePointerStr(offset, 3);
-                break;
-            case FlagType.Pointer32Bit:
-                code = snesApi.GeneratePointerStr(offset, 4);
-                break;
-            case FlagType.Text:
+            FlagType.Opcode => RenderInstructionStr(offset),
+            
+            // treat all these as 8bit data
+            FlagType.Unreached or 
+            FlagType.Operand or 
+            FlagType.Data8Bit or FlagType.Graphics or FlagType.Music or FlagType.Empty => 
+                snesApi.GetFormattedBytes(offset, 1, bytes),
+            
+            FlagType.Data16Bit => snesApi.GetFormattedBytes(offset, 2, bytes),
+            FlagType.Data24Bit => snesApi.GetFormattedBytes(offset, 3, bytes),
+            FlagType.Data32Bit => snesApi.GetFormattedBytes(offset, 4, bytes),
+            FlagType.Pointer16Bit => snesApi.GeneratePointerStr(offset, 2),
+            FlagType.Pointer24Bit => snesApi.GeneratePointerStr(offset, 3),
+            FlagType.Pointer32Bit => snesApi.GeneratePointerStr(offset, 4),
+            
+            FlagType.Text =>
                 // note: this won't always respect the line length because it can generate, on the same line, multiple strings, etc.
-                code = Data.CreateAssemblyFormattedTextLine(offset, bytes);
-                break;
-        }
+                Data.CreateAssemblyFormattedTextLine(offset, bytes),
+            
+            _ => ""
+        };
 
         return Util.LeftAlign(length, code);
+    }
+
+    private string RenderInstructionStr(int offset)
+    {
+        var cpuInstructionDataFormatted = Data.GetInstructionData(offset);
+        
+        LogCreator.OnInstructionVisited(offset, cpuInstructionDataFormatted);
+        
+        // this is the actual thing the assembly generator cares about - the final text
+        return cpuInstructionDataFormatted.FullGeneratedText;
     }
 }
 
@@ -170,6 +167,15 @@ public class AssemblyGenerateMap : AssemblyPartialLineGenerator
 // 0+ = bank_xx.asm, -1 = labels.asm
 public class AssemblyGenerateIncSrc : AssemblyPartialLineGenerator
 {
+    public enum SpecialIncSrc
+    {
+        // hack: pass these in for the 'offset' param.
+        // NOTE: never use -1, has special meaning.
+        // we should rewrite the code to not rely on this stuffing hack
+        Labels = -2,
+        Defines = -3,
+    }
+    
     public AssemblyGenerateIncSrc()
     {
         Token = "%incsrc";
@@ -177,14 +183,24 @@ public class AssemblyGenerateIncSrc : AssemblyPartialLineGenerator
     }
     protected override string Generate(int offset, int length)
     {
-        return Util.LeftAlign(length,BuildIncsrc(offset));
+        return Util.LeftAlign(length,BuildIncSrcForOffset(offset));
     }
 
-    private string BuildIncsrc(int offset)
+    private string BuildIncSrcForOffset(int offset)
     {
-        return offset >= 0
-            ? BuildOutputForOffset(offset)
-            : BuildIncSrc("labels.asm");
+        return offset switch
+        {
+            // this part is fine.
+            // if offset is >= 0, build an include for that bank
+            >= 0 => BuildOutputForOffset(offset),
+            
+            // special includes:
+            // this is a total hack: negative numbers are IDs. this is a real dumb way to do this:
+            (int)SpecialIncSrc.Labels => BuildIncSrc("labels.asm"),
+            (int)SpecialIncSrc.Defines => BuildIncSrc("defines.asm"),
+            
+            _ => $"; internal error: INVALID incsrc={offset}"
+        };
     }
 
     private string BuildOutputForOffset(int offset)

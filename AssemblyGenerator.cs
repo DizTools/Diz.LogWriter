@@ -18,9 +18,12 @@ public interface ILogCreatorForGenerator
 { 
     public LogWriterSettings Settings { get; }
     ILogCreatorDataSource<IData> Data { get; }
-    void OnLabelVisited(int snesAddress);
 
     int GetLineByteLength(int offset);
+    
+    // report some events to the log creator so it can stash some meta-information about the assembly output
+    void OnLabelVisited(int snesAddress);
+    void OnInstructionVisited(int offset, CpuInstructionDataFormatted cpuInstructionDataFormatted);
 }
     
 public abstract class AssemblyPartialLineGenerator : IAssemblyPartialGenerator
@@ -77,8 +80,7 @@ public abstract class AssemblyPartialLineGenerator : IAssemblyPartialGenerator
         // we should throw exceptions both ways, for now though we'll let it slide if we were passed in
         // an offset and we don't need it.
         var hasOffset = offset != null;
-        //if (UsesOffset)
-        //{
+
         if (UsesOffset != hasOffset)
             throw new InvalidDataException(UsesOffset
                 ? "Assembly output component needed an offset but received none."
