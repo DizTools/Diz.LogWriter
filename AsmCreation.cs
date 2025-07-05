@@ -36,8 +36,8 @@ public class AsmDefinesGenerator : AsmCreationBase
     {
         LogCreator.SwitchOutputStream("defines");
 
-        LogCreator.WriteLine(";contains any auto-generated defines from Diz.");
-        LogCreator.WriteLine("; auto-generated file DON'T edit\n");
+        LogCreator.WriteLine("; contains any auto-generated defines from Diz.");
+        LogCreator.WriteLine("; auto-generated file DON'T edit");
 
         var sortedDefines = Defines
             .OrderBy (x => x.Key);
