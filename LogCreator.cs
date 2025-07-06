@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using Diz.Core.export;
 using Diz.Core.Interfaces;
+using Diz.Core.util;
 using Diz.LogWriter.util;
 
 namespace Diz.LogWriter;
@@ -335,6 +336,10 @@ public class LogCreator : ILogCreatorForGenerator
             defineName.Contains(','))
             return;
         
+        // normalize the value (seems like the right place to do this is here, but,
+        // it might be OK to do this earlier in the Cpu operations that generate this)
+        originalValue = Util.ChopExtraZeroesFromHexStr(originalValue);
+        
         // ok we appear to have found a valid define.
         // let's add it if one doesn't exist.   if multiple exist in the project, they MUST all match or else
         // the output assembly won't be byte-identical.  we'll note the error but that's about it.
@@ -348,7 +353,7 @@ public class LogCreator : ILogCreatorForGenerator
             return;
         }
 
-        visitedDefines.Add(defineName, instruction.OriginalNonOverridenOperand1);
+        visitedDefines.Add(defineName, originalValue);
     }
 
     public int GetLineByteLength(int offset) => Data.GetLineByteLength(offset, GetRomSize(), Settings.DataPerLine);

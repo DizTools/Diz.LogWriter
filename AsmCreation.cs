@@ -1,6 +1,7 @@
 ﻿using System.Collections.Generic;
 using System.Linq;
 using Diz.Core.Interfaces;
+using Diz.Core.util;
 using Diz.LogWriter.assemblyGenerators;
 using Diz.LogWriter.util;
 
@@ -43,7 +44,7 @@ public class AsmDefinesGenerator : AsmCreationBase
             .OrderBy (x => x.Key);
         
         foreach (var (defineName, value) in sortedDefines) {
-            LogCreator.WriteLine($"{defineName} = {value}");
+            LogCreator.WriteLine($"{defineName} = {Util.ChopExtraZeroesFromHexStr(value)}");
         }
     }
 }
