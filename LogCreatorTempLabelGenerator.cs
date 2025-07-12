@@ -32,7 +32,7 @@ internal class LogCreatorTempLabelGenerator
         GenerateSectionTempLabels();
         
         // 2. generate ONLY +/- labels
-        //    do this second because we'll selectively overwrite some types of labels (like "CODE_")
+        //    do this LAST because we'll selectively overwrite some types of labels (like "CODE_")
         if (ShouldGeneratePlusMinusLabels)
             GeneratePlusMinusLabels();
     }
@@ -56,8 +56,8 @@ internal class LogCreatorTempLabelGenerator
     {
         public int DestOffset;
         
-        public int Depth = 1;    // depth of 1 is "+", 2 is "++", etc
-        public string Label => new string(IsForwardBranch ? '+' : '-', Depth);
+        public int Depth = 1;    // depth of 1 is "+" or "-", 2 is "++" or "--", etc
+        public string Label => new(IsForwardBranch ? '+' : '-', Depth);
         public bool IsForwardBranch = true;
     }
 
@@ -77,7 +77,10 @@ internal class LogCreatorTempLabelGenerator
             .OrderByDescending(b => b.SrcOffset)
             .ToList();
         
+        // generate "+" labels:
         GenerateLocalPlusMinusBranchLabelsOneDirection(forwardBranches, directionIsForward: true);
+        
+        // generate "-" labels:
         GenerateLocalPlusMinusBranchLabelsOneDirection(backwardBranches, directionIsForward: false);
     }
 
@@ -86,7 +89,8 @@ internal class LogCreatorTempLabelGenerator
         var states = new List<BranchState>();
         foreach (var branch in forwardBranches)
         {
-            // 1. remove any branches we moved past before processing this next branch:
+            // 1. remove any branches we moved past before processing this next branch
+            //    i.e. branches in the wrong direction
             var startingOffset = branch.SrcOffset;
             states = states
                 .Where(x => directionIsForward 
