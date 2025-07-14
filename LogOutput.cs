@@ -15,6 +15,10 @@ public abstract class LogCreatorOutput
         public int ErrorCount = -1;
         public LogCreator LogCreator;
         public string OutputStr = ""; // this is only populated if outputString=true
+        
+        // only used for bad errors like exceptions during the export process.
+        // errors or irregularities in the assemblyoutput are actually considered "success"
+        public string ErrorMsg = "";
     }
         
     protected LogCreator LogCreator;
@@ -161,6 +165,33 @@ public class LogCreatorStreamOutput : LogCreatorOutput
     protected StreamWriter OpenNewStream(string streamName)
     {
         var finalPath = BuildStreamPath(streamName);
+        
+        //TODO: catch rare exception here of System.IO.IOEXception. probably because an editor has the file open
+        // System.IO.IOException: The requested operation cannot be performed on a file with a user-mapped section open. : 'D:\projects\cthack\src\rom\generated\bank_F9.asm'.
+        // at Microsoft.Win32.SafeHandles.SafeFileHandle.CreateFile(String fullPath, FileMode mode, FileAccess access, FileShare share, FileOptions options)
+        // at Microsoft.Win32.SafeHandles.SafeFileHandle.Open(String fullPath, FileMode mode, FileAccess access, FileShare share, FileOptions options, Int64 preallocationSize, Nullable`1 unixCreateMode)
+        // at System.IO.Strategies.OSFileStreamStrategy..ctor(String path, FileMode mode, FileAccess access, FileShare share, FileOptions options, Int64 preallocationSize, Nullable`1 unixCreateMode)
+        // at System.IO.Strategies.FileStreamHelpers.ChooseStrategyCore(String path, FileMode mode, FileAccess access, FileShare share, FileOptions options, Int64 preallocationSize, Nullable`1 unixCreateMode)
+        // at System.IO.StreamWriter.ValidateArgsAndOpenPath(String path, Boolean append, Encoding encoding, Int32 bufferSize)
+        // at System.IO.StreamWriter..ctor(String path)
+        // at Diz.LogWriter.LogCreatorStreamOutput.OpenNewStream(String streamName) in D:\projects\DiztinGUIsh-main\Diz.LogWriter\LogOutput.cs:line 164
+        // at Diz.LogWriter.LogCreatorStreamOutput.SwitchToStream(String streamName, Boolean isErrorStream) in D:\projects\DiztinGUIsh-main\Diz.LogWriter\LogOutput.cs:line 145
+        // at Diz.LogWriter.LogCreatorStreamOutput.SetBank(Int32 bankNum) in D:\projects\DiztinGUIsh-main\Diz.LogWriter\LogOutput.cs:line 135
+        // at Diz.LogWriter.LogCreator.SetBank(Int32 offset, Int32 bankToSwitchTo) in D:\projects\DiztinGUIsh-main\Diz.LogWriter\LogCreator.cs:line 283
+        // at Diz.LogWriter.AsmCreationBankManager.SwitchBank(Int32 offset, Int32 newBank) in D:\projects\DiztinGUIsh-main\Diz.LogWriter\AsmCreationBankManager.cs:line 24
+        // at Diz.LogWriter.AsmCreationBankManager.SwitchBanksIfNeeded(Int32 offset) in D:\projects\DiztinGUIsh-main\Diz.LogWriter\AsmCreationBankManager.cs:line 19
+        // at Diz.LogWriter.AsmCreationInstructions.WriteAddress(Int32& offset) in D:\projects\DiztinGUIsh-main\Diz.LogWriter\AsmCreationInstructions.cs:line 31
+        // at Diz.LogWriter.AsmCreationInstructions.Execute() in D:\projects\DiztinGUIsh-main\Diz.LogWriter\AsmCreationInstructions.cs:line 22
+        // at Diz.LogWriter.AsmCreationBase.Generate() in D:\projects\DiztinGUIsh-main\Diz.LogWriter\AsmCreation.cs:line 27
+        // at Diz.LogWriter.LogCreator.<WriteAllOutput>b__43_0(IAsmCreationStep step) in D:\projects\DiztinGUIsh-main\Diz.LogWriter\LogCreator.cs:line 122
+        // at System.Collections.Generic.List`1.ForEach(Action`1 action)
+        // at Diz.LogWriter.LogCreator.WriteAllOutput() in D:\projects\DiztinGUIsh-main\Diz.LogWriter\LogCreator.cs:line 115
+        // at Diz.LogWriter.LogCreator.CreateLog() in D:\projects\DiztinGUIsh-main\Diz.LogWriter\LogCreator.cs:line 66
+        // at Diz.Controllers.controllers.ProjectController.<>c__DisplayClass31_0.<WriteAssemblyOutput>b__0() in D:\projects\DiztinGUIsh-main\Diz.Controllers\Diz.Controllers\src\controllers\ProjectController.cs:line 240
+        // at Diz.Controllers.controllers.ProgressBarJob.<>c__DisplayClass0_0.<RunAndWaitForCompletion>b__0() in D:\projects\DiztinGUIsh-main\Diz.Controllers\Diz.Controllers\src\controllers\ProgressBarWorker.cs:line 119
+        // at Diz.Controllers.controllers.ProgressBarJob.Thread_DoWork() in D:\projects\DiztinGUIsh-main\Diz.Controllers\Diz.Controllers\src\controllers\ProgressBarWorker.cs:line 137
+        // at Diz.Controllers.controllers.ProgressBarWorker.Thread_Main() in D:\projects\DiztinGUIsh-main\Diz.Controllers\Diz.Controllers\src\controllers\ProgressBarWorker.cs:line 88
+        // at System.Threading.Thread.StartCallback()
         var streamWriter = new StreamWriter(finalPath);
         outputStreams.Add(streamName, streamWriter);
         return streamWriter;

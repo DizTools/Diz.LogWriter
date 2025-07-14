@@ -52,33 +52,51 @@ public class LogCreator : ILogCreatorForGenerator
         
     public virtual LogCreatorOutput.OutputResult CreateLog()
     {
-        Init();
-
+        LogCreatorOutput.OutputResult result = null;
         try
         {
-            CreateTemporaryLabels();
-                
-            // optional: performance only: build a cache of the temp labels + real labels, so it's not computed on the fly as often
-            // do this after generating any temporary labels/etc
-            LockLabelsCache();
-                
-            // THIS IS IT: do the real stuff
-            WriteAllOutput();
+            Init();
+
+            try
+            {
+                CreateTemporaryLabels();
+
+                // optional: performance only: build a cache of the temp labels + real labels, so it's not computed on the fly as often
+                // do this after generating any temporary labels/etc
+                LockLabelsCache();
+
+                // THIS IS IT: do the real stuff
+                WriteAllOutput();
+            }
+            finally
+            {
+                // optional: performance only: remove the labels cache
+                UnlockLabelsCache();
+
+                // MODIFIES UNDERLYING DATA. WE MUST ALWAYS MAKE SURE TO UNDO THIS
+                RemoveTemporaryLabels();
+            }
+
+            OnProgressChanged(ProgressEvent.Status.FinishingCleanup);
+            result = GetResult();
+            CloseOutput(result);
+
+            OnProgressChanged(ProgressEvent.Status.Done);
+
         }
-        finally
+        catch (Exception e)
         {
-            // optional: performance only: remove the labels cache
-            UnlockLabelsCache();
-                
-            // MODIFIES UNDERLYING DATA. WE MUST ALWAYS MAKE SURE TO UNDO THIS
-            RemoveTemporaryLabels();
+            // unhandled exception (IO errors/etc)
+            // not much to be done here.
+            result = new LogCreatorOutput.OutputResult
+            {
+                LogCreator = this,
+                ErrorCount = 1,
+                Success = false,
+                ErrorMsg = $"Exception during export (save, restart, and try again? or legit bug in Diz):\r\n{e.Message}",
+            };
         }
 
-        OnProgressChanged(ProgressEvent.Status.FinishingCleanup);
-        var result = GetResult();
-        CloseOutput(result);
-
-        OnProgressChanged(ProgressEvent.Status.Done);
         return result;
     }
 
