@@ -373,17 +373,19 @@ internal class LogCreatorTempLabelGenerator
         // well, then we're just going to generate an auto-generated label like "CODE_", "DATA_", "EMPTY_" etc
         if (prefix.Length == 0)
         {
-            // final check: is there a reason we SHOULDN'T generate a generic label here?
-            // one case: we're referencing an instruction that explicitly wants there to be 
+            // final check: is there a reason we SHOULDN'T generate a generic label from our source address?
+            // one case: we're referencing an instruction that explicitly wants there to be no label generated
             var srcComment = snesData.GetCommentText(snesSrcAddress);
             var srcSpecialDirective = CpuUtils.ParseCommentSpecialDirective(srcComment);
-            if (srcSpecialDirective is { ForceNoLabel: true })
+            if (srcSpecialDirective is { ForceOnlyShowRawHex: true } or { DontGenerateTemporaryLabelAtDestination: true })
                 return;
             
             prefix = RomUtil.TypeToLabel(snesData.GetFlag(offsetToGenerateLabelAt));
             
             // final check for priority (feel free to add more conditions here as necessary)
-            dontAllowOvewritingWithPlusMinus = flag is FlagType.Pointer16Bit or FlagType.Pointer24Bit or FlagType.Pointer32Bit;
+            dontAllowOvewritingWithPlusMinus =
+                // if we're in a pointer table, prevent the destination address from ever being assigned a +/- label
+                flag is FlagType.Pointer16Bit or FlagType.Pointer24Bit or FlagType.Pointer32Bit;
         }
 
         var labelAddress = Util.ToHexString6(snesAddressToGenerateLabelAt);
