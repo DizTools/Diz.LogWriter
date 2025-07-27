@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using CsvHelper;
 using Diz.Core.Interfaces;
+using Diz.Core.util;
 using Diz.LogWriter.assemblyGenerators;
 using JetBrains.Annotations;
 
@@ -43,6 +44,7 @@ public class AsmStepWriteUnvisitedLabels : AsmStepExtraLabelOutputBase
     {
         // HACK: HACK: HACK: shove a SNES address in here even though what we SHOULD do is express it as a ROM offset.
         // however, we need to be able to pass in non-ROM SNES addresses.
+        // ReSharper disable once InlineTemporaryVariable
         var stuffSnesAddressInOffset = snesAddress;
                 
         LogCreator.WriteLine(LogCreator.LineGenerator.GenerateSpecialLine("labelassign", stuffSnesAddressInOffset));
@@ -144,15 +146,21 @@ public class AsmStepExtraOutputAllLabelsCsv : AsmStepWriteAllLabels
 
     protected override void OutputLabelAtOffset(string category, int offset)
     {
-        var printableLabel = AssemblyGenerateLabelAssign.GetPrintableLabelDataAtOffset(offset, Data.Labels);
-        if (printableLabel == null)
+        if (csvWriter == null)
             return;
-            
-        var labelRecord = new CsvLabelRecord(printableLabel, category);
+        
+        var printableLabels = AssemblyGenerateLabelAssign.GetPrintableLabelsDataAtSnesAddress(offset, Data.Labels);
+        if (printableLabels == null || printableLabels.Count == 0)
+            return;
 
-        Debug.Assert(csvWriter != null);
-        csvWriter.WriteRecord(labelRecord);
-        csvWriter.NextRecord();
+        var csvLabelRecords = printableLabels
+            .Select(printableLabel => new CsvLabelRecord(printableLabel, category));
+        
+        foreach (var labelRecord in csvLabelRecords)
+        {
+            csvWriter.WriteRecord(labelRecord);
+            csvWriter.NextRecord();
+        }
     }
 }
     
@@ -197,15 +205,18 @@ public class AsmStepExtraOutputBsneSymFile : AsmStepWriteAllLabels
 
     protected override void OutputLabelAtOffset(string category, int offset)
     {
-        var printableLabel = AssemblyGenerateLabelAssign.GetPrintableLabelDataAtOffset(offset, Data.Labels);
-        if (printableLabel == null)
+        var printableLabels = AssemblyGenerateLabelAssign.GetPrintableLabelsDataAtSnesAddress(offset, Data.Labels);
+        if (printableLabels == null || printableLabels.Count == 0)
             return;
             
         // we're going to exclude a few auto-generated labels from this just keep BSNES exports de-cluttered.
-        if (printableLabel.Name.StartsWith("CODE_") || printableLabel.Name.StartsWith("LOOSE_OP_"))
-            return;
-            
-        WriteLineBsnesFormattedAddressAndText(printableLabel.SnesAddress, printableLabel.Name);
+        foreach (var printableLabel in printableLabels)
+        {
+            if (printableLabel.Name.StartsWith("CODE_") || printableLabel.Name.StartsWith("LOOSE_OP_") || RomUtil.IsValidPlusMinusLabel(printableLabel.Name))
+                return;
+
+            WriteLineBsnesFormattedAddressAndText(printableLabel.SnesAddress, printableLabel.Name);
+        }
     }
 
     private void WriteLineBsnesFormattedAddressAndText(int snesAddress, string text)

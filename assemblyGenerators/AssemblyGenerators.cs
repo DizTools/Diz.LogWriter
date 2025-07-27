@@ -1,9 +1,10 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Linq;
 using Diz.Core.Interfaces;
 using Diz.Core.model;
 using Diz.Core.util;
 using Diz.Cpu._65816;
-using JetBrains.Annotations;
 
 namespace Diz.LogWriter.assemblyGenerators;
 
@@ -391,19 +392,23 @@ public class AssemblyGenerateLabelAssign : AssemblyPartialLineGenerator
         public string GetSnesAddressFormatted() => Util.NumberToBaseString(SnesAddress, Util.NumberBase.Hexadecimal, 6, true);
     }
         
-    public static PrintableLabelDataAtOffset GetPrintableLabelDataAtOffset(
-        int snesAddress,
-        IReadOnlyLabelProvider labelProvider 
-    ) {
-        var labelName = labelProvider.GetLabelName(snesAddress);
-        if (string.IsNullOrEmpty(labelName)) 
+    public static List<PrintableLabelDataAtOffset> GetPrintableLabelsDataAtSnesAddress(int snesAddress, IReadOnlyLabelProvider labelProvider) 
+    {
+        var label = labelProvider.GetLabel(snesAddress);
+        if (label == null)
             return null;
-            
-        return new PrintableLabelDataAtOffset(
-            Name: labelName,
-            SnesAddress: snesAddress,
-            Comment: labelProvider.GetLabelComment(snesAddress) ?? ""
-        );
+        
+        var labelComment = labelProvider.GetLabelComment(snesAddress) ?? "";
+
+        var allLabelNames = new List<string>();
+        
+        allLabelNames.Add(label.Name);
+        allLabelNames.AddRange(label.ContextMappings.Select(x => x.NameOverride));
+        
+        return allLabelNames
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => new PrintableLabelDataAtOffset(snesAddress, x, labelComment))
+            .ToList();
     }
         
     public AssemblyGenerateLabelAssign()
@@ -420,20 +425,33 @@ public class AssemblyGenerateLabelAssign : AssemblyPartialLineGenerator
         // ReSharper disable once InlineTemporaryVariable
         var snesAddress = offset; // yes. this is correct. HACK THIS IN THERE. DO IT.
             
-        var labelDataAtOffset = GetPrintableLabelDataAtOffset(snesAddress, Data.Labels);
-        if (labelDataAtOffset == null)
+        var labelsDataAtOffset = GetPrintableLabelsDataAtSnesAddress(snesAddress, Data.Labels);
+        if (labelsDataAtOffset == null || labelsDataAtOffset.Count == 0)
             return null;
 
-        var finalCommentText = "";
+        // TODO: this function wasn't meant to generate more than 1 label per line but, we have to.
+        // until we rework this, we'll generate multiple lines ourselves
+        var finalOutput = "";
+        if (labelsDataAtOffset.Count > 1)
+        {
+            finalOutput += "\n";
+        }
+        
+        foreach (var labelDataAtOffset in labelsDataAtOffset)
+        {
+            var finalCommentText = "";
 
-        // TODO: probably not the best way to stuff this in here. -Dom
-        // we should consider putting this in the %comment% section in the future.
-        // for now, just hacking this in so it's included somewhere. this option defaults to OFF
-        if (LogCreator.Settings.PrintLabelSpecificComments && labelDataAtOffset.Comment != "")
-            finalCommentText = $"; !^ {labelDataAtOffset.Comment} ^!";
+            // TODO: probably not the best way to stuff this in here. -Dom
+            // we should consider putting this in the %comment% section in the future.
+            // for now, just hacking this in so it's included somewhere. this option defaults to OFF
+            if (LogCreator.Settings.PrintLabelSpecificComments && labelDataAtOffset.Comment != "")
+                finalCommentText = $"; !^ {labelDataAtOffset.Comment} ^!";
 
-        var snesAddrFormatted = labelDataAtOffset.GetSnesAddressFormatted();
-        var str = $"{labelDataAtOffset.Name} = {snesAddrFormatted}{finalCommentText}";
-        return Util.LeftAlign(length, str);
+            var snesAddrFormatted = labelDataAtOffset.GetSnesAddressFormatted();
+            var str = $"{labelDataAtOffset.Name} = {snesAddrFormatted}{finalCommentText}";
+            finalOutput += Util.LeftAlign(length, str) + "\n";
+        }
+
+        return finalOutput;
     }
 }
