@@ -1,5 +1,4 @@
-﻿using System.Diagnostics;
-using System.IO;
+﻿using System.IO;
 using Diz.Core.export;
 using Diz.Core.Interfaces;
 using Diz.Cpu._65816;
@@ -8,11 +7,6 @@ using Diz.LogWriter.util;
 // ReSharper disable ParameterOnlyUsedForPreconditionCheck.Global
 
 namespace Diz.LogWriter;
-
-public interface IAssemblyPartialGenerator
-{
-    string Emit(int? offset, int? lengthOverride);
-}
 
 public interface ILogCreatorForGenerator
 { 
@@ -25,8 +19,23 @@ public interface ILogCreatorForGenerator
     void OnLabelVisited(int snesAddress);
     void OnInstructionVisited(int offset, CpuInstructionDataFormatted cpuInstructionDataFormatted);
 }
+
+public abstract class TokenBase
+{
     
-public abstract class AssemblyPartialLineGenerator : IAssemblyPartialGenerator
+}
+
+public class TokenString : TokenBase
+{
+    public string Value { get; init; } = "";
+}
+
+public class TokenComment : TokenString
+{
+    
+}
+    
+public abstract class AssemblyPartialLineGenerator
 {
     public ILogCreatorForGenerator LogCreator { get; set; }
         
@@ -38,25 +47,38 @@ public abstract class AssemblyPartialLineGenerator : IAssemblyPartialGenerator
     public bool RequiresToken { get; init; } = true;
     public bool UsesOffset { get; init; } = true;
 
-    public string Emit(int? offset, int? lengthOverride)
+    // helper
+    public static TokenBase[] GenerateFromStr(string str)
+    {
+        return [
+            new TokenString {
+                Value = str
+            }
+        ];
+    }
+
+    public TokenBase[] GenerateTokens(int? offset, int? lengthOverride)
     {
         var finalLength = lengthOverride ?? DefaultLength;
 
         Validate(offset, finalLength);
 
-        if (!UsesOffset) 
-            return Generate(finalLength);
-            
-        Debug.Assert(offset != null);
-        return Generate(offset.Value, finalLength);
+        if (offset == null && UsesOffset)
+            throw new InvalidDataException("Invalid Emit() call: Can't call without an offset.");
+
+        var generatedTokens = !UsesOffset
+            ? Generate(finalLength) 
+            : Generate(offset ?? -1, finalLength);
+
+        return generatedTokens;
     }
 
-    protected virtual string Generate(int length)
+    protected virtual TokenBase[] Generate(int length)
     {
         throw new InvalidDataException("Invalid Generate() call: Can't call without an offset.");
     }
         
-    protected virtual string Generate(int offset, int length)
+    protected virtual TokenBase[] Generate(int offset, int length)
     {
         // NOTE: if you get here (without an override in a derived class)
         // it means the client code should have instead been calling the other Generate(length) overload
@@ -85,6 +107,5 @@ public abstract class AssemblyPartialLineGenerator : IAssemblyPartialGenerator
             throw new InvalidDataException(UsesOffset
                 ? "Assembly output component needed an offset but received none."
                 : "Assembly output component doesn't use an offset but we were provided one anyway.");
-        //}
     }
 }
