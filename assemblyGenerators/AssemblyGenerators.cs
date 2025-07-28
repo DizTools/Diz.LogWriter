@@ -401,7 +401,8 @@ public class AssemblyGenerateLabelAssign : AssemblyPartialLineGenerator
 {
     public record PrintableLabelDataAtOffset(int SnesAddress, string Name, string Comment)
     {
-        public string GetSnesAddressFormatted() => Util.NumberToBaseString(SnesAddress, Util.NumberBase.Hexadecimal, 6, true);
+        public string GetSnesAddressFormatted() => 
+            Util.NumberToBaseString(SnesAddress, Util.NumberBase.Hexadecimal, 6, true);
     }
         
     public static List<PrintableLabelDataAtOffset> GetPrintableLabelsDataAtSnesAddress(int snesAddress, IReadOnlyLabelProvider labelProvider) 
@@ -437,18 +438,14 @@ public class AssemblyGenerateLabelAssign : AssemblyPartialLineGenerator
         // ReSharper disable once InlineTemporaryVariable
         var snesAddress = offset; // yes. this is correct. HACK THIS IN THERE. DO IT.
             
+        // this may generate multiple labels for a given SNES address (in the case of multi-context regions)
+        // we need to output ALL of them.
+        
         var labelsDataAtOffset = GetPrintableLabelsDataAtSnesAddress(snesAddress, Data.Labels);
         if (labelsDataAtOffset == null || labelsDataAtOffset.Count == 0)
-            return null;
-
-        // TODO: this function wasn't meant to generate more than 1 label per line but, we have to.
-        // until we rework this, we'll generate multiple lines ourselves
-        var finalOutput = "";
-        if (labelsDataAtOffset.Count > 1)
-        {
-            finalOutput += "\n";
-        }
+            return [];
         
+        var tokensOutput = new List<TokenBase>();
         foreach (var labelDataAtOffset in labelsDataAtOffset)
         {
             var finalCommentText = "";
@@ -457,13 +454,22 @@ public class AssemblyGenerateLabelAssign : AssemblyPartialLineGenerator
             // we should consider putting this in the %comment% section in the future.
             // for now, just hacking this in so it's included somewhere. this option defaults to OFF
             if (LogCreator.Settings.PrintLabelSpecificComments && labelDataAtOffset.Comment != "")
-                finalCommentText = $"; !^ {labelDataAtOffset.Comment} ^!";
+            {
+                // warning: can contain newlines. would be nicer to preserve these better. for now:
+                var commentInsideText = labelDataAtOffset.Comment
+                    .Replace("\n", " ")
+                    .Replace("\r", " ");
+                
+                finalCommentText = $"; !^ {commentInsideText} ^!";
+            }
 
             var snesAddrFormatted = labelDataAtOffset.GetSnesAddressFormatted();
             var str = $"{labelDataAtOffset.Name} = {snesAddrFormatted}{finalCommentText}";
-            finalOutput += Util.LeftAlign(length, str) + "\n";
+            var formattedLabelAssignText = Util.LeftAlign(length, str);
+
+            tokensOutput.Add(new TokenLabelAssign { Value = formattedLabelAssignText });
         }
 
-        return GenerateFromStr(finalOutput);
+        return tokensOutput.ToArray();
     }
 }

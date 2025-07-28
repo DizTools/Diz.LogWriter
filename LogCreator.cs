@@ -292,8 +292,10 @@ public class LogCreator : ILogCreatorForGenerator
         if (special == "empty" && !Settings.OutputExtraWhitespace)
             return;
             
-        var output = LineGenerator.GenerateSpecialLine(special, offset); 
-        WriteLine(output);
+        var outputLines = LineGenerator.GenerateSpecialLines(special, offset);
+        foreach (var outputLine in outputLines) {
+            WriteLine(outputLine);
+        }
     }
 
     protected internal void SetBank(int offset, int bankToSwitchTo)

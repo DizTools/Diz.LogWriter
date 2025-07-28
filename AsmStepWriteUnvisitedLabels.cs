@@ -27,7 +27,12 @@ public abstract class AsmStepExtraLabelOutputBase : AsmCreationBase
 // TODO: we can probably refactor/recombine a few of these related classes together
 
 // generate labels.asm. this is a list of labels that are NOT defined implicitly in the main .asm files
-// this will be a list of unvisited labels. it will NOT contain VISITED labels.
+// this will be a list of "unvisited" labels. it will NOT contain VISITED labels.
+//
+// this would be better named as:
+// "implicitly defined" (label address is inferred from its position in the assembly output and not explicitly defined, like ROM addresses)
+// vs
+// "explcititly defined" (label address is defined explicitly, i.e. RAM addresses)
 public class AsmStepWriteUnvisitedLabels : AsmStepExtraLabelOutputBase
 {
     protected override void Execute()
@@ -46,8 +51,11 @@ public class AsmStepWriteUnvisitedLabels : AsmStepExtraLabelOutputBase
         // however, we need to be able to pass in non-ROM SNES addresses.
         // ReSharper disable once InlineTemporaryVariable
         var stuffSnesAddressInOffset = snesAddress;
-                
-        LogCreator.WriteLine(LogCreator.LineGenerator.GenerateSpecialLine("labelassign", stuffSnesAddressInOffset));
+        
+        var outputLines = LogCreator.LineGenerator.GenerateSpecialLines("labelassign", stuffSnesAddressInOffset);
+        foreach (var outputLine in outputLines) {
+            LogCreator.WriteLine(outputLine);
+        }
     }
 }
 
@@ -91,7 +99,10 @@ public class AsmStepWriteAllLabels : AsmStepExtraLabelOutputBase
 
     protected virtual void OutputLabelAtOffset(string category, int offset)
     {
-        LogCreator.WriteLine($";!^!-{category}-! " + LogCreator.LineGenerator.GenerateSpecialLine("labelassign", offset));
+        var outputLines = LogCreator.LineGenerator.GenerateSpecialLines("labelassign", offset);
+        foreach (var outputLine in outputLines) {
+            LogCreator.WriteLine($";!^!-{category}-! {outputLine}");
+        }
     }
 }
 

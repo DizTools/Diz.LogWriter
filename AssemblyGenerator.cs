@@ -34,6 +34,11 @@ public class TokenComment : TokenString
 {
     
 }
+
+public class TokenLabelAssign : TokenString
+{
+    // in this, value contains the entire assignment for ONE label
+}
     
 public abstract class AssemblyPartialLineGenerator
 {

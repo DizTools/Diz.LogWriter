@@ -31,8 +31,10 @@ public class AsmCreationInstructions : AsmCreationBase
         BankManager.SwitchBanksIfNeeded(offset);
 
         WriteBlankLineIfStartingNewParagraph(offset);
-        var lineTxt = LogCreator.LineGenerator.GenerateNormalLine(offset);
-        LogCreator.WriteLine(lineTxt);
+        var outputLines = LogCreator.LineGenerator.GenerateNormalLines(offset);
+        foreach (var outputLine in outputLines) {
+            LogCreator.WriteLine(outputLine);
+        }
         LogCreator.DataErrorChecking.CheckForErrorsAt(offset);
         WriteBlankLineIfEndPoint(offset);
 
