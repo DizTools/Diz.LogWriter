@@ -241,7 +241,6 @@ public class LogCreator : ILogCreatorForGenerator
             },
 
             // optional: same as above BUT output all labels even if they're not used (same data as above, just as CSV)
-
             new AsmStepExtraOutputAllLabelsCsv
             {
                 // if wanted, make this a separate setting for CSV export. for now if they check "export extra label stuff"
@@ -276,8 +275,9 @@ public class LogCreator : ILogCreatorForGenerator
         
     private void InitOutput()
     {
-        Output = Settings.OutputToString ? new LogCreatorStringOutput() : Output = new LogCreatorStreamOutput();
-        Output.Init(this);
+        Output = Settings.OutputToString 
+            ? new LogCreatorStringOutput(this) 
+            : new LogCreatorStreamOutput(this);
     }
 
     private void CloseOutput(LogCreatorOutput.OutputResult result)
@@ -296,7 +296,7 @@ public class LogCreator : ILogCreatorForGenerator
         };
 
         if (Settings.OutputToString)
-            result.OutputStr = ((LogCreatorStringOutput) Output)?.OutputString;
+            result.AssemblyOutputStr = ((LogCreatorStringOutput) Output)?.OutputString;
 
         return result;
     }

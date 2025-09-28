@@ -7,33 +7,30 @@ using Diz.Core.util;
 
 namespace Diz.LogWriter;
 
-public abstract class LogCreatorOutput
+public abstract class LogCreatorOutput(LogCreator logCreator)
 {
     public class OutputResult
     {
         public bool Success;
         public int ErrorCount = -1;
         public LogCreator LogCreator;
-        public string OutputStr = ""; // this is only populated if outputString=true
+        
+        // these are only populated if outputString=true, otherwise this data will be written to the output files
+        // (mostly these are used for debugging/testing purposes)
+        public string AssemblyOutputStr = "";
+        public string ErrorsStr = "";
         
         // only used for bad errors like exceptions during the export process.
         // errors or irregularities in the assemblyoutput are actually considered "success" but marked as warnings
         public string FatalErrorMsg = "";
     }
         
-    protected LogCreator LogCreator;
+    protected readonly LogCreator LogCreator = logCreator;
     public int ErrorCount { get; protected set; }
 
-    public void Init(LogCreator logCreator)
-    {
-        LogCreator = logCreator;
-        Init();
-    }
-
-    protected virtual void Init() { }
     public virtual void Finish(OutputResult result) { }
     public virtual void SetBank(int bankNum) { }
-    public virtual void SwitchToStream(string streamName, bool isErrorStream = false) { }
+    public virtual void SwitchToStream(string streamName) { }
     public abstract void WriteLine(string line);
     public abstract void WriteErrorLine(string line);
 
@@ -54,7 +51,7 @@ public class LogCreatorStringOutput : LogCreatorOutput
     public string OutputString => outputBuilder.ToString();
     public string ErrorString => errorBuilder.ToString();
 
-    protected override void Init()
+    public LogCreatorStringOutput(LogCreator logCreator) : base(logCreator)
     {
         Debug.Assert(LogCreator.Settings.OutputToString && LogCreator.Settings.Structure == LogWriterSettings.FormatStructure.SingleFile);
     }
@@ -75,96 +72,86 @@ public class LogCreatorStringOutput : LogCreatorOutput
 
     public override void Finish(OutputResult result)
     {
-        result.OutputStr = OutputString;
+        result.AssemblyOutputStr = OutputString;
+        result.ErrorsStr = ErrorString;
+        result.ErrorCount = ErrorCount;
     }
 }
 
 public class LogCreatorStreamOutput : LogCreatorOutput
 {
-    private readonly Dictionary<string, StreamWriter> outputStreams = new();
+    private const string MainStreamFilename = "main.asm";
+    
+    private readonly string outputFolder;
+    private readonly Dictionary<string, StreamWriter> openOutputStreams = new();
+    private StreamWriter activeOutputStream;
     private StreamWriter errorOutputStream;
 
-    // references to stuff in outputStreams
-    private string activeStreamName;
-    private StreamWriter activeOutputStream;
-
-    private string folder;
-    private string filename; // if set to single file output mode.
-
-    protected override void Init()
+    public LogCreatorStreamOutput(LogCreator logCreator) : base(logCreator)
     {
-        SetupOutputFolderFromSettings();
-        SetupInitialOutputStreams();
+        outputFolder = LogCreator.Settings.BuildFullOutputPath();
+        
+        // main stream: always start on "main.asm" so there's a default
+        // single file mode will never allow using a different name
+        activeOutputStream = GetOrCreateStream(GetMainStreamFilename());
+        errorOutputStream = GetOrCreateStream(LogCreator.Settings.ErrorFilename);
     }
 
-    private void SetupOutputFolderFromSettings()
-    {
-        folder = LogCreator.Settings.BuildFullOutputPath();
-    }
-
-    private void SetupInitialOutputStreams()
+    private string GetMainStreamFilename()
     {
         if (LogCreator.Settings.Structure == LogWriterSettings.FormatStructure.SingleFile)
         {
-            filename = Path.GetFileName(LogCreator.Settings.FileOrFolderOutPath);
-            SwitchToStream(filename);
+            // this can be either a FILE or a Directory
+            // if it's a directory, we're going to not use the name and just override it.
+            // if it's a file, we'll use the filename.
+            var singleFileMainFilename = Path.GetFileName(LogCreator.Settings.FileOrFolderOutPath);
+            if (!string.IsNullOrEmpty(singleFileMainFilename))
+                return singleFileMainFilename;
         }
-        else
-        {
-            SwitchToStream("main");
-        }
-
-        SwitchToStream(LogCreator.Settings.ErrorFilename, isErrorStream: true);
+        
+        return MainStreamFilename;
     }
 
     public override void Finish(OutputResult result)
     {
-        foreach (var stream in outputStreams)
-        {
-            stream.Value.Close();
-        }
-        outputStreams.Clear();
-
         activeOutputStream = null;
         errorOutputStream = null;
-        activeStreamName = "";
-
-        if (result.ErrorCount == 0)
+        
+        foreach (var stream in openOutputStreams) {
+            stream.Value.Close();
+        }
+        openOutputStreams.Clear();
+        
+        if (ErrorCount == 0)
             File.Delete(BuildStreamPath(LogCreator.Settings.ErrorFilename));
     }
-
+    
     public override void SetBank(int bankNum)
     {
         var bankStr = Util.NumberToBaseString(bankNum, Util.NumberBase.Hexadecimal, 2);
-        SwitchToStream($"bank_{bankStr}");
+        SwitchToStream($"bank_{bankStr}.asm");
     }
-
-    public override void SwitchToStream(string streamName, bool isErrorStream = false)
+    
+    public override void SwitchToStream(string streamName)
     {
         // don't switch off the main file IF we're only supposed to be outputting one file
-        if (LogCreator.Settings.Structure == LogWriterSettings.FormatStructure.SingleFile &&
-            !string.IsNullOrEmpty(activeStreamName))
-            return;
-
-        var whichStream = outputStreams.TryGetValue(streamName, out var outputStream) 
-            ? outputStream 
-            : OpenNewStream(streamName);
-
-        if (!isErrorStream)
-            SetActiveStream(streamName, whichStream);
-        else
-            errorOutputStream = whichStream;
+        var streamNameToUse = streamName;
+        if (LogCreator.Settings.Structure == LogWriterSettings.FormatStructure.SingleFile)
+            streamNameToUse = GetMainStreamFilename();
+        
+        activeOutputStream = GetOrCreateStream(streamNameToUse);
     }
 
-    private void SetActiveStream(string streamName, StreamWriter streamWriter)
-    {
-        activeStreamName = streamName;
-        activeOutputStream = streamWriter;
+    // Get a stream (open file handle that can be written to) 
+    // Returns an existing stream if it exists, or, registers this in the list of active streams, if not already setup
+    private StreamWriter GetOrCreateStream(string streamFilename)  {
+        return openOutputStreams.GetValueOrDefault(streamFilename) ?? OpenNewStream(streamFilename);
     }
 
-    protected StreamWriter OpenNewStream(string streamName)
+    // if the stream name doesn't have a file extension, ".asm" will be added automatcally
+    protected StreamWriter OpenNewStream(string streamFilename)
     {
-        var finalPath = BuildStreamPath(streamName);
+        var finalPath = BuildStreamPath(streamFilename);
         
         //TODO: catch rare exception here of System.IO.IOEXception. probably because an external editor has the file open when we do the export
         // example:
@@ -194,26 +181,21 @@ public class LogCreatorStreamOutput : LogCreatorOutput
         // at Diz.Controllers.controllers.ProgressBarJob.Thread_DoWork() in D:\projects\DiztinGUIsh-main\Diz.Controllers\Diz.Controllers\src\controllers\ProgressBarWorker.cs:line 137
         // at Diz.Controllers.controllers.ProgressBarWorker.Thread_Main() in D:\projects\DiztinGUIsh-main\Diz.Controllers\Diz.Controllers\src\controllers\ProgressBarWorker.cs:line 88
         // at System.Threading.Thread.StartCallback()
+        
         var streamWriter = new StreamWriter(finalPath);
-        outputStreams.Add(streamName, streamWriter);
+        openOutputStreams.Add(streamFilename, streamWriter);
         return streamWriter;
     }
 
-    private string BuildStreamPath(string streamName)
-    {
-        var fullOutputPath = Path.Combine(folder, streamName);
-
-        if (!Path.HasExtension(fullOutputPath))
-            fullOutputPath += ".asm";
-        return fullOutputPath;
+    private string BuildStreamPath(string streamFilename) {
+        return Path.Combine(outputFolder, streamFilename);
     }
 
     public override void WriteLine(string line)
     {
         if (!ShouldOutput(line))
             return;
-            
-        Debug.Assert(activeOutputStream != null && !string.IsNullOrEmpty(activeStreamName));
+        
         activeOutputStream.WriteLine(line);
     }
 

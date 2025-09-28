@@ -35,7 +35,7 @@ public class AsmDefinesGenerator : AsmCreationBase
     
     protected override void Execute()
     {
-        LogCreator.SwitchOutputStream("defines");
+        LogCreator.SwitchOutputStream("defines.asm");
 
         LogCreator.WriteLine("; contains any auto-generated defines from Diz.");
         LogCreator.WriteLine("; auto-generated file DON'T edit");

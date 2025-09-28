@@ -37,7 +37,7 @@ public class AsmStepWriteUnvisitedLabels : AsmStepExtraLabelOutputBase
 {
     protected override void Execute()
     {
-        LogCreator.SwitchOutputStream("labels");
+        LogCreator.SwitchOutputStream("labels.asm");
 
         foreach (var (snesAddress, _) in LabelTracker.UnvisitedLabels)
         {

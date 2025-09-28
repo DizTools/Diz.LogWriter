@@ -14,12 +14,12 @@ namespace Diz.LogWriter;
 // These labels exist only for the duration of this export, and then are discarded.
 internal class LogCreatorTempLabelGenerator
 {
-    public LogCreator LogCreator { get; init; }
+    public required LogCreator LogCreator { get; init; }
     public ILogCreatorDataSource<IData> Data => LogCreator.Data;
     public bool GenerateAllUnlabeled { get; init; }
-    
     public bool ShouldGeneratePlusMinusLabels { get; init; }
-        
+
+
     public void ClearTemporaryLabels()
     {
         // restore original labels. SUPER IMPORTANT THIS HAPPENS WHen WE'RE DONE
