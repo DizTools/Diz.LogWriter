@@ -54,9 +54,18 @@ public class LogCreator : ILogCreatorForGenerator
         
     public virtual LogCreatorOutput.OutputResult CreateLog()
     {
-        LogCreatorOutput.OutputResult result = null;
         try
         {
+            // temporary hack. support for SingleFile mode is broken at the moment (especially when using !defines)
+            // disable it with a warning. not the most user-friendly thing in the world.
+            // we might consider removing support for this mode entirely in the future.
+            if (Settings.Structure == LogWriterSettings.FormatStructure.SingleFile) {
+                return new LogCreatorOutput.OutputResult {
+                    LogCreator = this, ErrorCount = 1, Success = false,
+                    FatalErrorMsg = "\r\nTemporary limitation: Sorry, single file output mode is broken in this version of Diz. If you need it, please open an issue on github so we can fix it.\r\nPlease change exporter settings, set Structure to 'one bank per bank' mode.",
+                };
+            }
+            
             Init();
 
             try
@@ -80,26 +89,21 @@ public class LogCreator : ILogCreatorForGenerator
             }
 
             OnProgressChanged(ProgressEvent.Status.FinishingCleanup);
-            result = GetResult();
+            var result = GetResult();
             CloseOutput(result);
 
             OnProgressChanged(ProgressEvent.Status.Done);
-
+            return result;
         }
         catch (Exception e)
         {
             // unhandled exception (IO errors/etc)
             // not much to be done here.
-            result = new LogCreatorOutput.OutputResult
-            {
-                LogCreator = this,
-                ErrorCount = 1,
-                Success = false,
-                ErrorMsg = $"Exception during export (save, restart, and try again? or legit bug in Diz):\r\n{e.Message}",
+            return new LogCreatorOutput.OutputResult {
+                LogCreator = this, ErrorCount = 1, Success = false,
+                FatalErrorMsg = $"Exception during export (save, restart, and try again? or legit bug in Diz):\r\n{e.Message}",
             };
         }
-
-        return result;
     }
 
     private void LockLabelsCache()
