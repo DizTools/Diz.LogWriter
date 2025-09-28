@@ -51,14 +51,12 @@ public class AsmDefinesGenerator : AsmCreationBase
 
 public class AsmCreationMainBankIncludes : AsmCreationBase
 {
-    public List<int> BanksVisited { get; init; } = [];
-
     protected override void Execute()
     {
         LogCreator.SwitchOutputStream(LogCreatorStreamOutput.MainStreamFilename);
         
         WriteIncludeFileDirective("defines.asm");
-        BanksVisited.ForEach(WriteIncSrcLineForBank);
+        LogCreator.UniqueVisitedBanks.ForEach(WriteIncSrcLineForBank);
         WriteIncludeFileDirective("labels.asm");
     }
 
@@ -66,13 +64,7 @@ public class AsmCreationMainBankIncludes : AsmCreationBase
         LogCreator.WriteLine(BuildIncSrcDirective(filename));
     
     private void WriteIncSrcLineForBank(int bank) => 
-        WriteIncludeFileDirective(BuildBankIncludeFilename(bank));
-
-    private static string BuildBankIncludeFilename(int bank)
-    {
-        var bankName = Util.NumberToBaseString(bank, Util.NumberBase.Hexadecimal, 2);
-        return $"bank_{bankName}.asm";
-    }
+        WriteIncludeFileDirective(AsmCreationBankManager.GetBankStreamName(bank));
 
     private static string BuildIncSrcDirective(string val) => 
         $"incsrc \"{val}\"";

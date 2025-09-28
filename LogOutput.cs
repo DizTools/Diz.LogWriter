@@ -29,7 +29,6 @@ public abstract class LogCreatorOutput(LogCreator logCreator)
     public int ErrorCount { get; protected set; }
 
     public virtual void Finish(OutputResult result) { }
-    public virtual void SetBank(int bankNum) { }
     public virtual void SwitchToStream(string streamName) { }
     public abstract void WriteLine(string line);
     public abstract void WriteErrorLine(string line);
@@ -124,12 +123,6 @@ public class LogCreatorStreamOutput : LogCreatorOutput
         
         if (ErrorCount == 0)
             File.Delete(BuildStreamPath(LogCreator.Settings.ErrorFilename));
-    }
-    
-    public override void SetBank(int bankNum)
-    {
-        var bankStr = Util.NumberToBaseString(bankNum, Util.NumberBase.Hexadecimal, 2);
-        SwitchToStream($"bank_{bankStr}.asm");
     }
     
     public override void SwitchToStream(string streamName)

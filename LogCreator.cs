@@ -24,7 +24,7 @@ public class LogCreator : ILogCreatorForGenerator
     private Dictionary<string, string> visitedDefines = new();
     
     // unique list of banks we've visited when exporting instructions
-    private List<int> visitedBanks = [];
+    public List<int> UniqueVisitedBanks { get; }= [];
 
     public class ProgressEvent
     {
@@ -167,7 +167,7 @@ public class LogCreator : ILogCreatorForGenerator
         LineGenerator = new LineGenerator(this, Settings.Format);
         LabelTracker = new LabelTracker(this);
         visitedDefines = new Dictionary<string, string>();
-        visitedBanks = [];
+        UniqueVisitedBanks.Clear();
             
         if (Settings.Unlabeled != LogWriterSettings.FormatUnlabeled.ShowNone)
         {
@@ -214,7 +214,6 @@ public class LogCreator : ILogCreatorForGenerator
             new AsmCreationMainBankIncludes
             {
                 Enabled = Settings.Structure == LogWriterSettings.FormatStructure.OneBankPerFile,
-                BanksVisited = visitedBanks,    // WARNING: generated via side effect of AsmCreationInstructions
                 LogCreator = this
             },
 
@@ -322,13 +321,7 @@ public class LogCreator : ILogCreatorForGenerator
         }
     }
 
-    protected internal void SetBank(int offset, int bankToSwitchTo)
-    {
-        Output.SetBank(bankToSwitchTo);
-        OnBankSwitched(offset);
-    }
-
-    private void OnBankSwitched(int offset)
+    public void WriteOrgDirectiveForOffset(int offset)
     {
         WriteEmptyLine();
         WriteSpecialLine("org", offset);
@@ -352,10 +345,10 @@ public class LogCreator : ILogCreatorForGenerator
         // 1. is this possibly a "!define" we want to output later?
         RememberInstructionIfOverridden(offset, cpuInstructionDataFormatted);
     }
-    public void OnBankVisited(int newBank)
-    { 
-        if (!visitedBanks.Contains(newBank))
-            visitedBanks.Add(newBank);
+
+    public void ReportVisitedBanks(List<int> bankManagerVisitedBanks) { 
+        UniqueVisitedBanks.Clear();
+        UniqueVisitedBanks.AddRange(bankManagerVisitedBanks);
     }
     
     private void RememberInstructionIfOverridden(int offset, CpuInstructionDataFormatted instruction)

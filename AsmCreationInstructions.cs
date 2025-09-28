@@ -11,16 +11,16 @@ public class AsmCreationInstructions : AsmCreationBase
     protected override void Execute()
     {
         var romSize = LogCreator.GetRomSize();
-        BankManager = new AsmCreationBankManager
-        {
+        BankManager = new AsmCreationBankManager {
             LogCreator = LogCreator,
         };
 
         // perf: this is the meat of the export, takes a while
-        for (var offset = 0; offset < romSize;)
-        {
+        for (var offset = 0; offset < romSize;) {
             WriteAddress(ref offset);
         }
+
+        LogCreator.ReportVisitedBanks(BankManager.VisitedBanks);
     }
 
     // write one line of the assembly output
