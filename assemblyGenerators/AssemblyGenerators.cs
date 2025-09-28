@@ -116,6 +116,8 @@ public class AssemblyGenerateCode : AssemblyPartialLineGenerator
     {
         var cpuInstructionDataFormatted = Data.GetInstructionData(offset);
         
+        // WARNING: this introduces a side effect populating data that affects the assembly generator output.
+        // it means the CPU instructions all have to be generated FIRST before the defines.asm can be created.
         LogCreator.OnInstructionVisited(offset, cpuInstructionDataFormatted);
         
         // this is the actual thing the assembly generator cares about - the final text
@@ -195,9 +197,9 @@ public class AssemblyGenerateIncSrc : AssemblyPartialLineGenerator
             >= 0 => BuildOutputForOffset(offset),
             
             // special includes:
-            // this is a total hack: negative numbers are IDs. this is a real dumb way to do this:
-            (int)SpecialIncSrc.Labels => BuildIncSrc("labels.asm"),
-            (int)SpecialIncSrc.Defines => BuildIncSrc("defines.asm"),
+            // this is a total hack: negative numbers are IDs. this is a real dumb and horrible way to do this:
+            (int)SpecialIncSrc.Labels => BuildIncSrc("labels.asm"),     // -2
+            (int)SpecialIncSrc.Defines => BuildIncSrc("defines.asm"),   // -1
             
             _ => $"; internal error: INVALID incsrc={offset}"
         };

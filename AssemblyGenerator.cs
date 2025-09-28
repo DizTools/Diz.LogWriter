@@ -17,6 +17,10 @@ public interface ILogCreatorForGenerator
     
     // report some events to the log creator so it can stash some meta-information about the assembly output
     void OnLabelVisited(int snesAddress);
+    
+    // cache some data that happens when an instruction is visited during creation of a line
+    // WARNING: introduces side-effects and means the asm must be generated before the defines in the step order,
+    // or we won't get the data.  kinda sucks if we need to re-order things
     void OnInstructionVisited(int offset, CpuInstructionDataFormatted cpuInstructionDataFormatted);
 }
 

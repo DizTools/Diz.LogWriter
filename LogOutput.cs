@@ -17,8 +17,8 @@ public abstract class LogCreatorOutput
         public string OutputStr = ""; // this is only populated if outputString=true
         
         // only used for bad errors like exceptions during the export process.
-        // errors or irregularities in the assemblyoutput are actually considered "success"
-        public string ErrorMsg = "";
+        // errors or irregularities in the assemblyoutput are actually considered "success" but marked as warnings
+        public string FatalErrorMsg = "";
     }
         
     protected LogCreator LogCreator;
@@ -166,8 +166,10 @@ public class LogCreatorStreamOutput : LogCreatorOutput
     {
         var finalPath = BuildStreamPath(streamName);
         
-        //TODO: catch rare exception here of System.IO.IOEXception. probably because an editor has the file open
-        // System.IO.IOException: The requested operation cannot be performed on a file with a user-mapped section open. : 'D:\projects\cthack\src\rom\generated\bank_F9.asm'.
+        //TODO: catch rare exception here of System.IO.IOEXception. probably because an external editor has the file open when we do the export
+        // example:
+        // System.IO.IOException: The requested operation cannot be performed on a file with a user-mapped section open. : 'bank_F9.asm'.
+        // .
         // at Microsoft.Win32.SafeHandles.SafeFileHandle.CreateFile(String fullPath, FileMode mode, FileAccess access, FileShare share, FileOptions options)
         // at Microsoft.Win32.SafeHandles.SafeFileHandle.Open(String fullPath, FileMode mode, FileAccess access, FileShare share, FileOptions options, Int64 preallocationSize, Nullable`1 unixCreateMode)
         // at System.IO.Strategies.OSFileStreamStrategy..ctor(String path, FileMode mode, FileAccess access, FileShare share, FileOptions options, Int64 preallocationSize, Nullable`1 unixCreateMode)

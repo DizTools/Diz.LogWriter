@@ -18,7 +18,9 @@ public class LogCreator : ILogCreatorForGenerator
     private LogCreatorTempLabelGenerator LogCreatorTempLabelGenerator { get; set; }
     public DataErrorChecking DataErrorChecking { get; private set; }
     
-    // mapping of defines (like "!max_hp") to values ("$FFFF") 
+    // mapping of defines (like "!max_hp") to values ("$FFFF")
+    // this introduces a side effect dependencie of the defines.asm on the main assembly being finished first,
+    // ideally, we wouldn't have any side effects
     private Dictionary<string, string> visitedDefines = new();
 
     public class ProgressEvent
@@ -172,14 +174,22 @@ public class LogCreator : ILogCreatorForGenerator
         RegisterSteps();
             
         OnProgressChanged(ProgressEvent.Status.DoneInit);
+        
+        // we're ready to start.
     }
 
     public List<IAsmCreationStep> Steps { get; private set; }
 
     public void RegisterSteps()
     {
-        // the following steps will be executed in order to generate the output disassembly files
+        // the following steps will be executed to generate the output disassembly files
         // each generates text that ends up in the generated/ directory.
+        // each step (IDEALLY) MUST NOT HAVE SIDE EFFECTS, because these steps need to be able to run in any order.
+        // (even though... right now they do have some side effects)
+        //
+        // WARNING: For multi-file output, the step order doesn't matter much.
+        // But, for single-file mode, since the steps are run in order, it matters heavily since things like 'defines'
+        // need to come before the assembly code that uses them.
             
         Steps =
         [
@@ -191,9 +201,11 @@ public class LogCreator : ILogCreatorForGenerator
                 Enabled = Settings.Structure == LogWriterSettings.FormatStructure.OneBankPerFile,
                 LogCreator = this
             },
-
-            // THE MEAT! outputs all the actual disassembly instructions in each of the bank files.
-            // this step also (implicitly) defines labels as they're output, and marks them as "visited" 
+            
+            // REQUIRED: THE MEAT! outputs all the actual disassembly instructions in each of the bank files.
+            // this step also (implicitly) defines labels as they're output, and marks them as "visited".
+            // limitation: for now, this introduces a side effect of outputting "visitedDefines",
+            // so it must come pretty early in the process
             new AsmCreationInstructions { LogCreator = this },
 
             // outputs the lines in labels.asm, which includes ONLY the leftover labels that aren't defined somewhere else.
@@ -247,7 +259,9 @@ public class LogCreator : ILogCreatorForGenerator
                 LabelTracker = LabelTracker,
             },
             
-            // output any defines if present:
+            // REQUIRED: output any defines if present:
+            // NOTE: for now, this step must come AFTER AsmCreationInstructions because we require
+            // population of the visitedDEfines
             new AsmDefinesGenerator
             {
                 LogCreator = this,
