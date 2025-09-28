@@ -212,16 +212,11 @@ public class AssemblyGenerateIncSrc : AssemblyPartialLineGenerator
         return BuildBankInclude(name);
     }
 
-    private static string BuildBankInclude(string name)
-    {
-        var val = $"bank_{name}.asm";
-        return BuildIncSrc(val);
-    }
+    private static string BuildBankInclude(string name) => 
+        BuildIncSrc($"bank_{name}.asm");
 
-    private static string BuildIncSrc(string val)
-    {
-        return $"incsrc \"{val}\"";
-    }
+    private static string BuildIncSrc(string val) => 
+        $"incsrc \"{val}\"";
 }
     
 public class AssemblyGenerateBankCross : AssemblyPartialLineGenerator
