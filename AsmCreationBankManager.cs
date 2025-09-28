@@ -25,6 +25,8 @@ public class AsmCreationBankManager
         CurrentBank = newBank;
             
         CheckForBankCrossError(offset);
+
+        LogCreator.OnBankVisited(newBank);
     }
 
     private void CheckForBankCrossError(int offset)

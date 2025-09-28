@@ -165,60 +165,7 @@ public class AssemblyGenerateMap : AssemblyPartialLineGenerator
         return GenerateFromStr(Util.LeftAlign(length, romMapType));
     }
 }
-    
-// 0+ = bank_xx.asm, -1 = labels.asm
-public class AssemblyGenerateIncSrc : AssemblyPartialLineGenerator
-{
-    public enum SpecialIncSrc
-    {
-        // hack: pass these in for the 'offset' param.
-        // NOTE: never use -1, has special meaning.
-        // we should rewrite the code to not rely on this stuffing hack
-        Labels = -2,
-        Defines = -3,
-    }
-    
-    public AssemblyGenerateIncSrc()
-    {
-        Token = "%incsrc";
-        DefaultLength = 1;
-    }
-    protected override TokenBase[] Generate(int offset, int length)
-    {
-        return GenerateFromStr(Util.LeftAlign(length, BuildIncSrcForOffset(offset)));
-    }
 
-    private string BuildIncSrcForOffset(int offset)
-    {
-        return offset switch
-        {
-            // this part is fine.
-            // if offset is >= 0, build an include for that bank
-            >= 0 => BuildOutputForOffset(offset),
-            
-            // special includes:
-            // this is a total hack: negative numbers are IDs. this is a real dumb and horrible way to do this:
-            (int)SpecialIncSrc.Labels => BuildIncSrc("labels.asm"),     // -2
-            (int)SpecialIncSrc.Defines => BuildIncSrc("defines.asm"),   // -1
-            
-            _ => $"; internal error: INVALID incsrc={offset}"
-        };
-    }
-
-    private string BuildOutputForOffset(int offset)
-    {
-        var bank = Data.ConvertPCtoSnes(offset) >> 16;
-        var name = Util.NumberToBaseString(bank, Util.NumberBase.Hexadecimal, 2);
-        return BuildBankInclude(name);
-    }
-
-    private static string BuildBankInclude(string name) => 
-        BuildIncSrc($"bank_{name}.asm");
-
-    private static string BuildIncSrc(string val) => 
-        $"incsrc \"{val}\"";
-}
-    
 public class AssemblyGenerateBankCross : AssemblyPartialLineGenerator
 {
     public AssemblyGenerateBankCross()

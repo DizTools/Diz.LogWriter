@@ -80,7 +80,7 @@ public class LogCreatorStringOutput : LogCreatorOutput
 
 public class LogCreatorStreamOutput : LogCreatorOutput
 {
-    private const string MainStreamFilename = "main.asm";
+    public const string MainStreamFilename = "main.asm";
     
     private readonly string outputFolder;
     private readonly Dictionary<string, StreamWriter> openOutputStreams = new();

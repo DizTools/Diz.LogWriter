@@ -22,6 +22,9 @@ public class LogCreator : ILogCreatorForGenerator
     // this introduces a side effect dependencie of the defines.asm on the main assembly being finished first,
     // ideally, we wouldn't have any side effects
     private Dictionary<string, string> visitedDefines = new();
+    
+    // unique list of banks we've visited when exporting instructions
+    private List<int> visitedBanks = [];
 
     public class ProgressEvent
     {
@@ -164,6 +167,7 @@ public class LogCreator : ILogCreatorForGenerator
         LineGenerator = new LineGenerator(this, Settings.Format);
         LabelTracker = new LabelTracker(this);
         visitedDefines = new Dictionary<string, string>();
+        visitedBanks = [];
             
         if (Settings.Unlabeled != LogWriterSettings.FormatUnlabeled.ShowNone)
         {
@@ -198,19 +202,21 @@ public class LogCreator : ILogCreatorForGenerator
         Steps =
         [
             new AsmCreationRomMap { LogCreator = this },
-
-            // outputs all the include stuff in main.asm like "incsrc bank_C0.asm", or "incsrc labels.asm" etc.
-            new AsmCreationMainBankIncludes
-            {
-                Enabled = Settings.Structure == LogWriterSettings.FormatStructure.OneBankPerFile,
-                LogCreator = this
-            },
             
             // REQUIRED: THE MEAT! outputs all the actual disassembly instructions in each of the bank files.
             // this step also (implicitly) defines labels as they're output, and marks them as "visited".
             // limitation: for now, this introduces a side effect of outputting "visitedDefines",
             // so it must come pretty early in the process
             new AsmCreationInstructions { LogCreator = this },
+            
+            // outputs all the include stuff in main.asm like "incsrc bank_C0.asm", or "incsrc labels.asm" etc.
+            // must come AFTER main instructions
+            new AsmCreationMainBankIncludes
+            {
+                Enabled = Settings.Structure == LogWriterSettings.FormatStructure.OneBankPerFile,
+                BanksVisited = visitedBanks,    // WARNING: generated via side effect of AsmCreationInstructions
+                LogCreator = this
+            },
 
             // outputs the lines in labels.asm, which includes ONLY the leftover labels that aren't defined somewhere else.
             // i.e. labels in RAM or labels that aren't associated with an offset from the step above will appear here.
@@ -268,7 +274,7 @@ public class LogCreator : ILogCreatorForGenerator
             new AsmDefinesGenerator
             {
                 LogCreator = this,
-                Defines = visitedDefines,
+                Defines = visitedDefines,   // WARNING: generated via side effect of AsmCreationInstructions
             },
         ];
     }
@@ -345,6 +351,11 @@ public class LogCreator : ILogCreatorForGenerator
         
         // 1. is this possibly a "!define" we want to output later?
         RememberInstructionIfOverridden(offset, cpuInstructionDataFormatted);
+    }
+    public void OnBankVisited(int newBank)
+    { 
+        if (!visitedBanks.Contains(newBank))
+            visitedBanks.Add(newBank);
     }
     
     private void RememberInstructionIfOverridden(int offset, CpuInstructionDataFormatted instruction)

@@ -51,27 +51,39 @@ public class AsmDefinesGenerator : AsmCreationBase
 
 public class AsmCreationMainBankIncludes : AsmCreationBase
 {
+    public List<int> BanksVisited { get; init; } = [];
+
     protected override void Execute()
     {
-        var size = LogCreator.GetRomSize();
+        LogCreator.SwitchOutputStream(LogCreatorStreamOutput.MainStreamFilename);
         
-        // NOTE: SpecialIncSrc here is a total hack. rewrite the code to not stuff random vales into the offset
-        
-        LogCreator.WriteSpecialLine("incsrc", (int)AssemblyGenerateIncSrc.SpecialIncSrc.Defines);
-            
-        for (var i = 0; i < size; i += Data.GetBankSize())
-            LogCreator.WriteSpecialLine("incsrc", i);
-            
-        // output the include for labels.asm file
-        // int.Minvalue here is just a magic nnumber that means output a line with "labels.asm" on it
-        LogCreator.WriteSpecialLine("incsrc", (int)AssemblyGenerateIncSrc.SpecialIncSrc.Labels);
+        WriteIncludeFileDirective("defines.asm");
+        BanksVisited.ForEach(WriteIncSrcLineForBank);
+        WriteIncludeFileDirective("labels.asm");
     }
+
+    private void WriteIncludeFileDirective(string filename) => 
+        LogCreator.WriteLine(BuildIncSrcDirective(filename));
+    
+    private void WriteIncSrcLineForBank(int bank) => 
+        WriteIncludeFileDirective(BuildBankIncludeFilename(bank));
+
+    private static string BuildBankIncludeFilename(int bank)
+    {
+        var bankName = Util.NumberToBaseString(bank, Util.NumberBase.Hexadecimal, 2);
+        return $"bank_{bankName}.asm";
+    }
+
+    private static string BuildIncSrcDirective(string val) => 
+        $"incsrc \"{val}\"";
 }
     
 public class AsmCreationRomMap : AsmCreationBase
 {
     protected override void Execute()
     {
+        LogCreator.SwitchOutputStream(LogCreatorStreamOutput.MainStreamFilename);
+        
         LogCreator.WriteSpecialLine("map");
         LogCreator.WriteEmptyLine();
     }
