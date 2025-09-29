@@ -199,6 +199,8 @@ public class LogCreator : ILogCreatorForGenerator
         // WARNING: For multi-file output, the step order doesn't matter much.
         // But, for single-file mode, since the steps are run in order, it matters heavily since things like 'defines'
         // need to come before the assembly code that uses them.
+        
+        var singleFileMode = Settings.Structure == LogWriterSettings.FormatStructure.SingleFile;
             
         Steps =
         [
@@ -208,14 +210,18 @@ public class LogCreator : ILogCreatorForGenerator
             // this step also (implicitly) defines labels as they're output, and marks them as "visited".
             // limitation: for now, this introduces a side effect of outputting "visitedDefines",
             // so it must come pretty early in the process
-            new AsmCreationInstructions { LogCreator = this },
+            new AsmCreationInstructions
+            {
+                LogCreator = this,
+                EnableRegionIncSrc = !singleFileMode
+            },
             
             // outputs all the include stuff in main.asm like "incsrc bank_C0.asm", or "incsrc labels.asm" etc.
             // must come AFTER main instructions
             new AsmCreationMainBankIncludes
             {
-                Enabled = Settings.Structure == LogWriterSettings.FormatStructure.OneBankPerFile,
-                LogCreator = this
+                LogCreator = this,
+                Enabled = !singleFileMode
             },
 
             // outputs the lines in labels.asm, which includes ONLY the leftover labels that aren't defined somewhere else.
@@ -234,10 +240,7 @@ public class LogCreator : ILogCreatorForGenerator
             // for metadata/romhacking/etc.
             // ----------------
 
-            // TODO: the 3 label steps below will run if Settings.IncludeUnusedLabels is checked.
-
-            // optional: let's generate a file that contains ALL LABELS regardless of whether or not they were referenced.
-
+            // optional: let's generate a file that contains ALL LABELS regardless of whether they were referenced.
             new AsmStepWriteAllLabels
             {
                 Enabled = Settings.IncludeUnusedLabels,
@@ -335,6 +338,47 @@ public class LogCreator : ILogCreatorForGenerator
             
         if (Settings.Structure == LogWriterSettings.FormatStructure.SingleFile) 
             WriteEmptyLine();
+    }
+    
+    public void SwitchOutputStreamForBank(int bank) => 
+        SwitchOutputStream(GetBankStreamName(bank));
+    
+    public void WriteIncludeFileDirective(string filename, bool padWithBlankLine = false)
+    {
+        if (padWithBlankLine) WriteEmptyLine();
+        WriteSpecialLine(
+            special: "incsrc",
+            context: new LineGenerator.TokenExtraContextFilename(filename)
+        );
+        if (padWithBlankLine) WriteEmptyLine();
+    }
+
+    public void WriteIncSrcLineForBank(int bank) => 
+        WriteIncludeFileDirective(GetBankStreamName(bank));
+    
+    public static string GetBankStreamName(int bank)
+    {
+        var bankStr = Util.NumberToBaseString(bank, Util.NumberBase.Hexadecimal, 2);
+        var bankStreamName = $"bank_{bankStr}.asm";
+        return bankStreamName;
+    }
+    
+    public void WriteHeaderForNewlyIncludedFile(int offset, string nameType, string name)
+    {
+        var snesAddress = Data.ConvertPCtoSnes(offset);
+        var formattedOffsetStr = RomUtil.ConvertNumToHexStr(offset, 3);
+        var formattedSnesAddrStr = snesAddress == -1 ? "[invalid]" : RomUtil.ConvertNumToHexStr(snesAddress, 3);
+        WriteLine($"; --> Included {nameType}: {name}");
+        WriteLine($"; --> Included from offset:       {formattedOffsetStr}");
+        WriteLine($"; --> Included from SNES address: {formattedSnesAddrStr}");
+        
+        WriteEmptyLine();
+        // it would be perfectly valid to put this ORG directive here, but, let's leave off absolute references like this once
+        // in case end-users want to re-locate this region somewhere else (like in a romhack/etc). since they can just
+        // incsrc it wherever they want
+        WriteLine($"; ORG {formattedSnesAddrStr}");
+        
+        WriteEmptyLine();
     }
         
     public void OnLabelVisited(int snesAddress) => LabelTracker.OnLabelVisited(snesAddress);

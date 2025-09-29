@@ -55,19 +55,10 @@ public class AsmCreationMainBankIncludes : AsmCreationBase
     {
         LogCreator.SwitchOutputStream(LogCreatorStreamOutput.MainStreamFilename);
         
-        WriteIncludeFileDirective("defines.asm");
-        LogCreator.UniqueVisitedBanks.ForEach(WriteIncSrcLineForBank);
-        WriteIncludeFileDirective("labels.asm");
+        LogCreator.WriteIncludeFileDirective("defines.asm");
+        LogCreator.UniqueVisitedBanks.ForEach(LogCreator.WriteIncSrcLineForBank);
+        LogCreator.WriteIncludeFileDirective("labels.asm");
     }
-
-    private void WriteIncludeFileDirective(string filename) =>
-        LogCreator.WriteSpecialLine(
-            special: "incsrc", 
-            context: new LineGenerator.TokenExtraContextFilename(filename)
-        );
-
-    private void WriteIncSrcLineForBank(int bank) => 
-        WriteIncludeFileDirective(AsmCreationBankManager.GetBankStreamName(bank));
 }
     
 public class AsmCreationRomMap : AsmCreationBase
