@@ -63,7 +63,7 @@ public class LogCreator : ILogCreatorForGenerator
             // temporary hack. support for SingleFile mode is broken at the moment (especially when using !defines)
             // disable it with a warning. not the most user-friendly thing in the world.
             // we might consider removing support for this mode entirely in the future.
-            if (Settings.Structure == LogWriterSettings.FormatStructure.SingleFile) {
+            if (Settings.Structure == LogWriterSettings.FormatStructure.SingleFile && !Settings.SuppressSingleFileModeDisabledError) {
                 return new LogCreatorOutput.OutputResult {
                     LogCreator = this, ErrorCount = 1, Success = false,
                     FatalErrorMsg = "\r\nTemporary limitation: Sorry, single file output mode is broken in this version of Diz. If you need it, please open an issue on github so we can fix it.\r\nPlease change exporter settings, set Structure to 'one bank per bank' mode.",

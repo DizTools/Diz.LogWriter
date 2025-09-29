@@ -36,6 +36,10 @@ public class SampleAssemblyTextGenerator : ISampleAssemblyTextGenerator
             Settings = settings with
             {
                 Structure = LogWriterSettings.FormatStructure.SingleFile,
+                
+                // tmp hack to allow SingleFile to work and not generate an error. only use for demo data (like this)
+                SuppressSingleFileModeDisabledError = true,
+                
                 FileOrFolderOutPath = "",
                 OutputToString = true,
                 RomSizeOverride = originalRomSizeBeforePadding.OriginalRomSizeBeforePadding
