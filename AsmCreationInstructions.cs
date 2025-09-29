@@ -157,8 +157,7 @@ public class AsmCreationInstructions : AsmCreationBase
     {
         // since we can only CHANGE INTO a region when we're in a bank, and if we're just starting, we're not in a bank yet,
         // skip this check. this check will ONLY make sure  
-        if (currentBank != -1)
-        {
+        if (currentBank != -1) {
             CheckIfRegionChanged(offset);
         }
 
@@ -172,6 +171,10 @@ public class AsmCreationInstructions : AsmCreationBase
         LogCreator.DataErrorChecking.CheckForErrorsAt(offset);
         WriteBlankLineIfEndPoint(offset);
 
+        // TODO: WARNING: TECHNICALLY, we should be checking for bank and region crosses
+        //  looking at our previous offset through our new offset.  we could miss transitions or
+        //  put region includes in the wrong spot.  Happens if there's regions that begin in the middle of 
+        //  boundaries like inside the middle byte of data labelled as 24-bit.
         offset += LogCreator.GetLineByteLength(offset);
     }
 
