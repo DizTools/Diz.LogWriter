@@ -17,7 +17,7 @@ public class AssemblyGeneratePercent : AssemblyPartialLineGenerator
         RequiresToken = false;
         UsesOffset = false;
     }
-    protected override TokenBase[] Generate(int length)
+    protected override TokenBase[] Generate(int length, LineGenerator.TokenExtraContext context = null)
     {
         return GenerateFromStr("%");  // just a literal %
     }
@@ -31,7 +31,7 @@ public class AssemblyGenerateEmpty : AssemblyPartialLineGenerator
         DefaultLength = 1;
         UsesOffset = false;
     }
-    protected override TokenBase[] Generate(int length)
+    protected override TokenBase[] Generate(int length, LineGenerator.TokenExtraContext context = null)
     {
         return GenerateFromStr(string.Format($"{{0,{length}}}", ""));
     }
@@ -44,7 +44,7 @@ public class AssemblyGenerateLabel : AssemblyPartialLineGenerator
         Token = "label";
         DefaultLength = -22;
     }
-    protected override TokenBase[] Generate(int offset, int length)
+    protected override TokenBase[] Generate(int offset, int length, LineGenerator.TokenExtraContext context = null)
     {
         // what we're given: a PC offset in ROM.
         // what we need to find: any labels (SNES addresses) that refer to it.
@@ -77,7 +77,7 @@ public class AssemblyGenerateCode : AssemblyPartialLineGenerator
         Token = "code";
         DefaultLength = 37;
     }
-    protected override TokenBase[] Generate(int offset, int length)
+    protected override TokenBase[] Generate(int offset, int length, LineGenerator.TokenExtraContext context = null)
     {
         var bytes = LogCreator.GetLineByteLength(offset);
 
@@ -131,9 +131,8 @@ public class AssemblyGenerateOrg : AssemblyPartialLineGenerator
     {
         Token = "%org";
         DefaultLength = 37;
-        UsesOffset = true;
     }
-    protected override TokenBase[] Generate(int offset, int length)
+    protected override TokenBase[] Generate(int offset, int length, LineGenerator.TokenExtraContext context = null)
     {
         var org =
             $"ORG {Util.NumberToBaseString(Data.ConvertPCtoSnes(offset), Util.NumberBase.Hexadecimal, 6, true)}";
@@ -149,7 +148,7 @@ public class AssemblyGenerateMap : AssemblyPartialLineGenerator
         DefaultLength = 37;
         UsesOffset = false;
     }
-    protected override TokenBase[] Generate(int length)
+    protected override TokenBase[] Generate(int length, LineGenerator.TokenExtraContext context = null)
     {
         var romMapType = Data.RomMapMode switch
         {
@@ -173,7 +172,7 @@ public class AssemblyGenerateBankCross : AssemblyPartialLineGenerator
         Token = "%bankcross";
         DefaultLength = 1;
     }
-    protected override TokenBase[] Generate(int length)
+    protected override TokenBase[] Generate(int length, LineGenerator.TokenExtraContext context = null)
     {
         return GenerateFromStr(Util.LeftAlign(length, "check bankcross off"));
     }
@@ -186,7 +185,7 @@ public class AssemblyGenerateIndirectAddress : AssemblyPartialLineGenerator
         Token = "ia";
         DefaultLength = 6;
     }
-    protected override TokenBase[] Generate(int offset, int length)
+    protected override TokenBase[] Generate(int offset, int length, LineGenerator.TokenExtraContext context = null)
     {
         var ia = Data.GetIntermediateAddressOrPointer(offset);
         return GenerateFromStr(ia >= 0 ? Util.ToHexString6(ia) : "      ");
@@ -200,7 +199,7 @@ public class AssemblyGenerateProgramCounter : AssemblyPartialLineGenerator
         Token = "pc";
         DefaultLength = 6;
     }
-    protected override TokenBase[] Generate(int offset, int length)
+    protected override TokenBase[] Generate(int offset, int length, LineGenerator.TokenExtraContext context = null)
     {
         return GenerateFromStr(Util.ToHexString6(Data.ConvertPCtoSnes(offset)));
     }
@@ -213,7 +212,7 @@ public class AssemblyGenerateOffset : AssemblyPartialLineGenerator
         Token = "offset";
         DefaultLength = -6; // trim to length
     }
-    protected override TokenBase[] Generate(int offset, int length)
+    protected override TokenBase[] Generate(int offset, int length, LineGenerator.TokenExtraContext context = null)
     {
         var hexStr = Util.NumberToBaseString(offset, Util.NumberBase.Hexadecimal, 0);
         return GenerateFromStr(Util.LeftAlign(length, hexStr));
@@ -227,7 +226,7 @@ public class AssemblyGenerateDataBytes : AssemblyPartialLineGenerator
         Token = "bytes";
         DefaultLength = 8;
     }
-    protected override TokenBase[] Generate(int offset, int length)
+    protected override TokenBase[] Generate(int offset, int length, LineGenerator.TokenExtraContext context = null)
     {
         var bytes = BuildByteString(offset);
             
@@ -258,7 +257,7 @@ public class AssemblyGenerateComment : AssemblyPartialLineGenerator
         Token = "comment";
         DefaultLength = 1;
     }
-    protected override TokenBase[] Generate(int offset, int length)
+    protected override TokenBase[] Generate(int offset, int length, LineGenerator.TokenExtraContext context = null)
     {
         var snesOffset = Data.ConvertPCtoSnes(offset);
         var str = Data.GetCommentText(snesOffset);
@@ -282,7 +281,7 @@ public class AssemblyGenerateDataBank : AssemblyPartialLineGenerator
         Token = "b";
         DefaultLength = 2;
     }
-    protected override TokenBase[] Generate(int offset, int length)
+    protected override TokenBase[] Generate(int offset, int length, LineGenerator.TokenExtraContext context = null)
     {
         return GenerateFromStr(Util.NumberToBaseString(SnesApi.GetDataBank(offset), Util.NumberBase.Hexadecimal, 2));
     }
@@ -295,7 +294,7 @@ public class AssemblyGenerateDirectPage : AssemblyPartialLineGenerator
         Token = "d";
         DefaultLength = 4;
     }
-    protected override TokenBase[] Generate(int offset, int length)
+    protected override TokenBase[] Generate(int offset, int length, LineGenerator.TokenExtraContext context = null)
     {
         return GenerateFromStr(Util.NumberToBaseString(SnesApi.GetDirectPage(offset), Util.NumberBase.Hexadecimal, 4));
     }
@@ -308,7 +307,7 @@ public class AssemblyGenerateMFlag : AssemblyPartialLineGenerator
         Token = "m";
         DefaultLength = 1;
     }
-    protected override TokenBase[] Generate(int offset, int length)
+    protected override TokenBase[] Generate(int offset, int length, LineGenerator.TokenExtraContext context = null)
     {
         var m = SnesApi.GetMFlag(offset);
 
@@ -327,7 +326,7 @@ public class AssemblyGenerateXFlag : AssemblyPartialLineGenerator
         Token = "x";
         DefaultLength = 1;
     }
-    protected override TokenBase[] Generate(int offset, int length)
+    protected override TokenBase[] Generate(int offset, int length, LineGenerator.TokenExtraContext context = null)
     {
         var x = SnesApi.GetXFlag(offset);
 
@@ -372,15 +371,15 @@ public class AssemblyGenerateLabelAssign : AssemblyPartialLineGenerator
     {
         Token = "%labelassign";
         DefaultLength = 1;
+        UsesOffset = false;
     }
 
-    protected override TokenBase[] Generate(int offset, int length)
+    protected override TokenBase[] Generate(int length, LineGenerator.TokenExtraContext context = null)
     {
-        // EXTREMELY IMPORTANT:
-        // unlike all the other generators where offset is a ROM offset,
-        // for us, offset will be a SNES address.
-        // ReSharper disable once InlineTemporaryVariable
-        var snesAddress = offset; // yes. this is correct. HACK THIS IN THERE. DO IT.
+        if (context is not LineGenerator.TokenExtraContextSnes snesContext)
+            throw new ArgumentException("internal parser error: SNES Context required.");
+        
+        var snesAddress = snesContext.SnesAddress;
             
         // this may generate multiple labels for a given SNES address (in the case of multi-context regions)
         // we need to output ALL of them.

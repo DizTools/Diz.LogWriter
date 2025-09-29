@@ -47,12 +47,11 @@ public class AsmStepWriteUnvisitedLabels : AsmStepExtraLabelOutputBase
 
     private void WriteUnusedLabel(int snesAddress)
     {
-        // HACK: HACK: HACK: shove a SNES address in here even though what we SHOULD do is express it as a ROM offset.
-        // however, we need to be able to pass in non-ROM SNES addresses.
-        // ReSharper disable once InlineTemporaryVariable
-        var stuffSnesAddressInOffset = snesAddress;
+        var outputLines = LogCreator.LineGenerator.GenerateSpecialLines(
+            type: "labelassign",
+            context: new LineGenerator.TokenExtraContextSnes(snesAddress)
+        );
         
-        var outputLines = LogCreator.LineGenerator.GenerateSpecialLines("labelassign", stuffSnesAddressInOffset);
         foreach (var outputLine in outputLines) {
             LogCreator.WriteLine(outputLine);
         }
@@ -88,18 +87,13 @@ public class AsmStepWriteAllLabels : AsmStepExtraLabelOutputBase
     {
         // maybe not the best place to add formatting
         var category = LabelTracker.UnvisitedLabels.ContainsKey(snesAddress) ? "UNUSED" : "USED";
-            
-        // shove this in here even though what we SHOULD do is express it as a ROM offset.
-        // however, we need to be able to pass in non-ROM SNES addresses.
-        // ReSharper disable once InlineTemporaryVariable
-        var hackShoveSnesAddressInsteadOfRomOffset = snesAddress;
-            
-        OutputLabelAtOffset(category, hackShoveSnesAddressInsteadOfRomOffset);
+
+        OutputLabelAtOffset(category, snesAddress);
     }
 
-    protected virtual void OutputLabelAtOffset(string category, int offset)
+    protected virtual void OutputLabelAtOffset(string category, int snesAddress)
     {
-        var outputLines = LogCreator.LineGenerator.GenerateSpecialLines("labelassign", offset);
+        var outputLines = LogCreator.LineGenerator.GenerateSpecialLines("labelassign", context: new LineGenerator.TokenExtraContextSnes(snesAddress));
         foreach (var outputLine in outputLines) {
             LogCreator.WriteLine($";!^!-{category}-! {outputLine}");
         }
@@ -155,12 +149,12 @@ public class AsmStepExtraOutputAllLabelsCsv : AsmStepWriteAllLabels
         csvWriter.NextRecord();
     }
 
-    protected override void OutputLabelAtOffset(string category, int offset)
+    protected override void OutputLabelAtOffset(string category, int snesAddress)
     {
         if (csvWriter == null)
             return;
         
-        var printableLabels = AssemblyGenerateLabelAssign.GetPrintableLabelsDataAtSnesAddress(offset, Data.Labels);
+        var printableLabels = AssemblyGenerateLabelAssign.GetPrintableLabelsDataAtSnesAddress(snesAddress, Data.Labels);
         if (printableLabels == null || printableLabels.Count == 0)
             return;
 
@@ -214,9 +208,9 @@ public class AsmStepExtraOutputBsneSymFile : AsmStepWriteAllLabels
         LogCreator.WriteLine("[labels]");
     }
 
-    protected override void OutputLabelAtOffset(string category, int offset)
+    protected override void OutputLabelAtOffset(string category, int snesAddress)
     {
-        var printableLabels = AssemblyGenerateLabelAssign.GetPrintableLabelsDataAtSnesAddress(offset, Data.Labels);
+        var printableLabels = AssemblyGenerateLabelAssign.GetPrintableLabelsDataAtSnesAddress(snesAddress, Data.Labels);
         if (printableLabels == null || printableLabels.Count == 0)
             return;
             

@@ -34,10 +34,7 @@ public class TokenString : TokenBase
     public string Value { get; init; } = "";
 }
 
-public class TokenComment : TokenString
-{
-    
-}
+public class TokenComment : TokenString  {}
 
 public class TokenLabelAssign : TokenString
 {
@@ -66,7 +63,7 @@ public abstract class AssemblyPartialLineGenerator
         ];
     }
 
-    public TokenBase[] GenerateTokens(int? offset, int? lengthOverride)
+    public TokenBase[] GenerateTokens(int? offset, int? lengthOverride, LineGenerator.TokenExtraContext context = null)
     {
         var finalLength = lengthOverride ?? DefaultLength;
 
@@ -76,18 +73,18 @@ public abstract class AssemblyPartialLineGenerator
             throw new InvalidDataException("Invalid Emit() call: Can't call without an offset.");
 
         var generatedTokens = !UsesOffset
-            ? Generate(finalLength) 
-            : Generate(offset ?? -1, finalLength);
+            ? Generate(finalLength, context)
+            : Generate(offset ?? -1, finalLength, context);
 
         return generatedTokens;
     }
 
-    protected virtual TokenBase[] Generate(int length)
+    protected virtual TokenBase[] Generate(int length, LineGenerator.TokenExtraContext context = null)
     {
         throw new InvalidDataException("Invalid Generate() call: Can't call without an offset.");
     }
         
-    protected virtual TokenBase[] Generate(int offset, int length)
+    protected virtual TokenBase[] Generate(int offset, int length, LineGenerator.TokenExtraContext context = null)
     {
         // NOTE: if you get here (without an override in a derived class)
         // it means the client code should have instead been calling the other Generate(length) overload
