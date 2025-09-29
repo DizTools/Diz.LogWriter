@@ -20,14 +20,14 @@ public class LineGenerator
         LogCreatorLineFormatter = new LogCreatorLineFormatter(formatStr, Generators);
     }
         
-    public string[] GenerateSpecialLines(string type, int offset = -1, [CanBeNull] TokenExtraContextSnes context = null) => GenerateLines(
+    public string[] GenerateSpecialLines(string type, int offset = -1, [CanBeNull] TokenExtraContext context = null) => GenerateLines(
             offset: offset, 
             forceGenerateFullLine: LogCreator.Settings.GenerateFullLine, 
             overrideFormatterName: type,
             context: context
         );
     
-    public string[] GenerateNormalLines(int offset, [CanBeNull] TokenExtraContextSnes context = null) => GenerateLines(
+    public string[] GenerateNormalLines(int offset, [CanBeNull] TokenExtraContext context = null) => GenerateLines(
         offset: offset,
         context: context
     );
@@ -39,10 +39,10 @@ public class LineGenerator
         public TokenBase[] Tokens { get; init; } = [];
     }
 
-    // optional extra info that can get passed along and used by certain types of tokens
-
+    // optional extra info that can get passed along and used by certain types of generators
     public abstract record TokenExtraContext {}
     public record TokenExtraContextSnes(int SnesAddress) : TokenExtraContext;
+    public record TokenExtraContextFilename(string Filename) : TokenExtraContext;
 
     private string[] GenerateLines(
         int offset, // we could actually stuff this inside the context, but haven't because MOST things want an offset 

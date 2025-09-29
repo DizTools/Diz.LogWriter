@@ -28,6 +28,7 @@ public static class AssemblyGeneratorRegistration
             typeof(AssemblyGenerateMFlag),
             typeof(AssemblyGenerateXFlag),
             typeof(AssemblyGenerateLabelAssign),
+            typeof(AssemblyGenerateIncSrc),
         };
     }
 

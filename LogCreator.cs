@@ -5,6 +5,7 @@ using Diz.Core.export;
 using Diz.Core.Interfaces;
 using Diz.Core.util;
 using Diz.LogWriter.util;
+using JetBrains.Annotations;
 
 namespace Diz.LogWriter;
 
@@ -310,12 +311,12 @@ public class LogCreator : ILogCreatorForGenerator
     public int GetRomSize() => Settings.RomSizeOverride != -1 ? Settings.RomSizeOverride : Data.GetRomSize();
     public void WriteLine(string line) => Output.WriteLine(line);
     protected internal void WriteEmptyLine() => WriteSpecialLine("empty");
-    internal void WriteSpecialLine(string special, int offset = -1)
+    internal void WriteSpecialLine(string special, int offset = -1,  [CanBeNull] LineGenerator.TokenExtraContext context = null)
     {
         if (special == "empty" && !Settings.OutputExtraWhitespace)
             return;
             
-        var outputLines = LineGenerator.GenerateSpecialLines(special, offset);
+        var outputLines = LineGenerator.GenerateSpecialLines(special, offset, context);
         foreach (var outputLine in outputLines) {
             WriteLine(outputLine);
         }

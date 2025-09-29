@@ -60,14 +60,14 @@ public class AsmCreationMainBankIncludes : AsmCreationBase
         WriteIncludeFileDirective("labels.asm");
     }
 
-    private void WriteIncludeFileDirective(string filename) => 
-        LogCreator.WriteLine(BuildIncSrcDirective(filename));
-    
+    private void WriteIncludeFileDirective(string filename) =>
+        LogCreator.WriteSpecialLine(
+            special: "incsrc", 
+            context: new LineGenerator.TokenExtraContextFilename(filename)
+        );
+
     private void WriteIncSrcLineForBank(int bank) => 
         WriteIncludeFileDirective(AsmCreationBankManager.GetBankStreamName(bank));
-
-    private static string BuildIncSrcDirective(string val) => 
-        $"incsrc \"{val}\"";
 }
     
 public class AsmCreationRomMap : AsmCreationBase

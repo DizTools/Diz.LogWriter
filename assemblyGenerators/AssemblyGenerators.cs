@@ -177,6 +177,28 @@ public class AssemblyGenerateBankCross : AssemblyPartialLineGenerator
         return GenerateFromStr(Util.LeftAlign(length, "check bankcross off"));
     }
 }
+
+public class AssemblyGenerateIncSrc : AssemblyPartialLineGenerator
+{
+    public AssemblyGenerateIncSrc()
+    {
+        Token = "%incsrc";
+        DefaultLength = 37;
+        UsesOffset = false;
+    }
+    protected override TokenBase[] Generate(int length, LineGenerator.TokenExtraContext context = null)
+    {
+        if (context is not LineGenerator.TokenExtraContextFilename filenameContext)
+            throw new ArgumentException("internal parser error: IncSrc Filename Context required.");
+        
+        var incSrcTargetFilename = filenameContext.Filename;
+        var incSrcDirective = BuildIncSrcDirective(incSrcTargetFilename);
+        return GenerateFromStr(Util.LeftAlign(length, incSrcDirective));
+    }
+    
+    private static string BuildIncSrcDirective(string val) => 
+        $"incsrc \"{val}\"";
+}
     
 public class AssemblyGenerateIndirectAddress : AssemblyPartialLineGenerator
 {
