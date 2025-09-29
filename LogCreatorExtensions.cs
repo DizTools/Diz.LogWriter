@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Linq;
+using System.Text;
 using Diz.Core.Interfaces;
 using Diz.Core.model;
 using Diz.Core.util;
@@ -113,15 +114,53 @@ public static class LogCreatorExtensions
 
         var bankSize = data.GetBankSize();
         var myBank = offset / bankSize;
-
+        
+        var srcSnesAddress = data.ConvertPCtoSnes(offset);
+        var srcRegions = srcSnesAddress == -1 ? [] : 
+            data.Data.Regions
+            .Where(x => srcSnesAddress >= x.StartSnesAddress && srcSnesAddress <= x.EndSnesAddress)
+            .OrderBy(x => x.Priority)
+            .ToList();
+        
         var min = step;
-        while (
-            min < max &&
-            offset + min < romSizeMax &&
-            snesApi.GetFlag(offset + min) == flagType &&
-            data.Labels.GetLabelName(data.ConvertPCtoSnes(offset + min)) == "" &&
-            (offset + min) / bankSize == myBank
-        ) min += step;
+        while (true)
+        {
+            if (min >= max)
+                break;
+
+            if (offset + min >= romSizeMax)
+                break;
+
+            if (snesApi.GetFlag(offset + min) != flagType)
+                break;
+
+            var endSnesAddress = data.ConvertPCtoSnes(offset + min);
+            
+            if (data.Labels.GetLabel(endSnesAddress) != null)
+                break;
+
+            if (data.GetComment(endSnesAddress) != null)
+                break;
+
+            if ((offset + min) / bankSize != myBank)
+                break;
+            
+            // check if we crossed a boundary of any "region" defined
+            // NOTE: doing it this way means that region boundaries that don't fall neatly across our "min" division
+            // might create correct but non-intuitive situations.
+            // i.e. a region boundary that starts/ends in the middle of a 16bit value
+            var dstRegions = endSnesAddress == -1 ? [] : 
+                data.Data.Regions
+                    .Where(x => endSnesAddress >= x.StartSnesAddress && endSnesAddress <= x.EndSnesAddress)
+                    .OrderBy(x => x.Priority)
+                    .ToList();
+
+            // warning: compares by reference (good enough for now)
+            if (!srcRegions.SequenceEqual(dstRegions))
+                break;
+            
+            min += step;
+        }
         return min;
     }
         
