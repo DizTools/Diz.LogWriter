@@ -3,6 +3,8 @@ using System.IO;
 using System.Linq;
 using Diz.Core.Interfaces;
 using Diz.Core.util;
+using Diz.Cpu._65816;
+using JetBrains.Annotations;
 
 namespace Diz.LogWriter;
 
@@ -79,8 +81,8 @@ public class AsmCreationInstructions : AsmCreationBase
         if (!EnableRegionIncSrc)
             return;
         
-        // can be "" if no region here
-        var nextRegionName = GetRegionAtOffset(offset);
+        var nextRegion = GetRegionAtOffset(offset);                     // can be null if no region here
+        var nextRegionName = nextRegion?.RegionName ?? "";
 
         // did anything change?
         if (nextRegionName == currentRegionName)
@@ -119,16 +121,28 @@ public class AsmCreationInstructions : AsmCreationBase
             
         // switch further output to the region-specific new file:
         LogCreator.SwitchOutputStream(regionNameIncSrcFilenameTarget);
-        LogCreator.WriteHeaderForNewlyIncludedFile(offset, "region", nextRegionName);
+
+        var regionBytesSize = -1;
+        if (nextRegion != null)
+        {
+            var startOffset = Data.ConvertSnesToPc(nextRegion.StartSnesAddress);
+            var endOffset = Data.ConvertSnesToPc(nextRegion.EndSnesAddress);
+            if (startOffset != -1 && endOffset != -1 && GetBankFromOffset(startOffset) == GetBankFromOffset(endOffset)) {
+                // we'll only report the size if they're in the same bank, otherwise the math gets weird. maybe. unsure. whatever
+                regionBytesSize = endOffset - startOffset;   
+            }
+        }
+        LogCreator.WriteHeaderForNewlyIncludedFile(offset, "region", nextRegionName, regionBytesSize);
 
         currentRegionName = nextRegionName;
     }
 
-    private string GetRegionAtOffset(int offset)
+    [CanBeNull]
+    private IRegion GetRegionAtOffset(int offset)
     {
         var snesAddress = Data.ConvertPCtoSnes(offset);
         if (snesAddress == -1)
-            return "";
+            return null;
         
         // find any applicable regions in the surrounding context of where we are in the ROM offset
         var applicableOrderedRegions = Data.Data.Regions
@@ -140,14 +154,13 @@ public class AsmCreationInstructions : AsmCreationBase
             .OrderBy(x => x.Priority)
             .ToList();
 
-        var nextRegion = applicableOrderedRegions.FirstOrDefault(); // can be null
+        var region = applicableOrderedRegions.FirstOrDefault(); // can be null
         
         // in the future maybe we can deal with this
         if (applicableOrderedRegions.Count > 1)
-            throw new InvalidDataException($"Multiple overlapping regions with ExportSeparateFile=true. This is not supported. '{nextRegion?.RegionName}'");
-
-        // will be empty if no region 
-        return nextRegion?.RegionName ?? "";
+            throw new InvalidDataException($"Multiple overlapping regions with ExportSeparateFile=true. This is not supported. '{region?.RegionName}'");
+        
+        return region;
     }
 
     // write one line of the assembly output

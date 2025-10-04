@@ -363,7 +363,7 @@ public class LogCreator : ILogCreatorForGenerator
         return bankStreamName;
     }
     
-    public void WriteHeaderForNewlyIncludedFile(int offset, string nameType, string name)
+    public void WriteHeaderForNewlyIncludedFile(int offset, string nameType, string name, int sizeInBytes = -1)
     {
         var snesAddress = Data.ConvertPCtoSnes(offset);
         var formattedOffsetStr = RomUtil.ConvertNumToHexStr(offset, 3);
@@ -371,6 +371,8 @@ public class LogCreator : ILogCreatorForGenerator
         WriteLine($"; --> Included {nameType}: {name}");
         WriteLine($"; --> Included from offset:       {formattedOffsetStr}");
         WriteLine($"; --> Included from SNES address: {formattedSnesAddrStr}");
+        if (sizeInBytes != -1)
+            WriteLine($"; --> {nameType} defined size (bytes) [actual may differ]: {sizeInBytes}");  // maybe mistrust this for weird situations. fine for comment
         
         WriteEmptyLine();
         // it would be perfectly valid to put this ORG directive here, but, let's leave off absolute references like this once
