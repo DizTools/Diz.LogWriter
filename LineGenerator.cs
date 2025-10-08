@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using IX.Library.Collections;
 using JetBrains.Annotations;
 
 namespace Diz.LogWriter;
@@ -193,7 +192,7 @@ public class LineGenerator
     public Dictionary<string, AssemblyPartialLineGenerator> CreateAssemblyGenerators()
     {
         var generators = AssemblyGeneratorRegistration.Create();
-        generators.ForEach(kvp => kvp.Value.LogCreator = LogCreator);
+        foreach (var v in generators.Values) v.LogCreator = LogCreator;
         return generators;
     }
 }
