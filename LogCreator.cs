@@ -94,7 +94,7 @@ public class LogCreator : ILogCreatorForGenerator
 
             OnProgressChanged(ProgressEvent.Status.FinishingCleanup);
             var result = GetResult();
-            CloseOutput(result);
+            CloseOutput(result); // might want to close the streams as part of the exception handler
 
             OnProgressChanged(ProgressEvent.Status.Done);
             return result;
