@@ -27,6 +27,8 @@ public class AsmCreationInstructions : AsmCreationBase
     
     private void SwitchBanksIfNeeded(int offset)
     {
+        // remember: in LoRom mapping, an offset like 0 will map to SNES address $808000.
+        
         var bank = GetBankFromOffset(offset);
         if (bank == currentBank) 
             return;
@@ -37,18 +39,22 @@ public class AsmCreationInstructions : AsmCreationBase
             throw new InvalidDataException($"Crossing banks in a region with ExportSeparateFile=true is not allowed. In '{currentRegionName}', crossing into new bank {bank}");
         }
         
-        SwitchBank(bank);
+        SwitchBank(bank, offset);
         CheckForBankCrossError(offset);
     }
 
-    // switch to a bank, one we may or may not have visited before
-    private void SwitchBank(int bank)
+    // switch to a bank, one we may or may not have visited before.
+    // we also need the real offset because in LoRom, bank 80 starts at ROM offset 0x00 == SNES address 0x808000
+    private void SwitchBank(int bank, int offset)
     {
         LogCreator.SwitchOutputStreamForBank(bank);
+        
+        // note: we can't just bank<<16 here, it will produce incorrect output for LoRom
+        var snesAddress = Data.ConvertPCtoSnes(offset);
 
         if (!visitedBanks.Contains(bank)) {
             visitedBanks.Add(bank);
-            LogCreator.WriteOrgDirectiveForOffset(bank << 16);
+            LogCreator.WriteOrgDirectiveForSnesAddress(snesAddress);
         }
 
         currentBank = bank;

@@ -131,11 +131,17 @@ public class AssemblyGenerateOrg : AssemblyPartialLineGenerator
     {
         Token = "%org";
         DefaultLength = 37;
+        UsesOffset = false;
     }
-    protected override TokenBase[] Generate(int offset, int length, LineGenerator.TokenExtraContext context = null)
+    protected override TokenBase[] Generate(int length, LineGenerator.TokenExtraContext context = null)
     {
+        if (context is not LineGenerator.TokenExtraContextSnes snesContext)
+            throw new ArgumentException("internal parser error: SNES Context required.");
+        
+        var snesAddress = snesContext.SnesAddress;
+        
         var org =
-            $"ORG {Util.NumberToBaseString(Data.ConvertPCtoSnes(offset), Util.NumberBase.Hexadecimal, 6, true)}";
+            $"ORG {Util.NumberToBaseString(snesAddress, Util.NumberBase.Hexadecimal, 6, true)}";
         return GenerateFromStr(Util.LeftAlign(length, org));
     }
 }

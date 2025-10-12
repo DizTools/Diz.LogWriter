@@ -325,10 +325,10 @@ public class LogCreator : ILogCreatorForGenerator
         }
     }
 
-    public void WriteOrgDirectiveForOffset(int offset)
+    public void WriteOrgDirectiveForSnesAddress(int snesAddress)
     {
         WriteEmptyLine();
-        WriteSpecialLine("org", offset);
+        WriteSpecialLine("org", context: new LineGenerator.TokenExtraContextSnes(snesAddress));
         WriteEmptyLine();
     }
 

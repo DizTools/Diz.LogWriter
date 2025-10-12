@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Diz.Core.Interfaces;
 using IX.Library.Collections;
 using JetBrains.Annotations;
 
