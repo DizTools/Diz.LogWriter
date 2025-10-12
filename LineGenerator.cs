@@ -133,7 +133,28 @@ public class LineGenerator
         var result = new List<string>();
         result.AddRange(prependComments);
         result.Add(mainLineText);
+        
+        // that's the normal stuff, let's add in a few hacky extras here that should be
+        // re-integrated better if we want them to be real options.
+        if (overrideFormatterName == null)
+            AppendFlagTypeToComment(ref result, offset, context);
+        
         return result.ToArray();
+    }
+    
+    private void AppendFlagTypeToComment(ref List<string> result, int offset, TokenExtraContext context)
+    {
+        // this is kinda hacked in here. if useful, do it with tokens/etc the proper way.
+        // we'll append the flag type (data vs code vs unreached/etc) to each comment.
+        
+        if (!LogCreator.Settings.AppendFlagTypeToComment || offset == -1)
+            return;
+
+        var data = LogCreator.Data;
+        var flag = data.GetFlag(offset);
+        if (flag is not (FlagType.Opcode or FlagType.Operand)) {
+            result[^1] += " >> " + flag;
+        }
     }
 
     private TokenBase[] GenerateColumn(int offset, LogCreatorLineFormatter.ColumnFormat columnFormat,
