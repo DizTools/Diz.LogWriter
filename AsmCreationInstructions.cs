@@ -2,6 +2,7 @@
 using System.IO;
 using System.Linq;
 using Diz.Core.Interfaces;
+using Diz.Core.model.snes;
 using Diz.Core.util;
 using Diz.Cpu._65816;
 using JetBrains.Annotations;
@@ -67,8 +68,14 @@ public class AsmCreationInstructions : AsmCreationBase
             LogCreator.OnErrorReported(offset, "An instruction crossed a bank boundary.");
     }
 
+    // includes both real regions from Data, and
+    // temporary extra regions generated dynamically from comments
+    private List<IRegion> allRegions = [];
+
     protected override void Execute()
     {
+        GenerateExtraIncSrcRegionsFromComments();
+
         var romSize = LogCreator.GetRomSize();
         
         // perf: this is the meat of the export, takes a while
@@ -77,6 +84,81 @@ public class AsmCreationInstructions : AsmCreationBase
         }
 
         LogCreator.ReportVisitedBanks(visitedBanks);
+    }
+
+    private void GenerateExtraIncSrcRegionsFromComments()
+    {
+        var regionSnesAddrStart = -1;
+        var regionName = "";
+        
+        // start with all existing real regions, and we'll append from here
+        allRegions.Clear();
+        allRegions.AddRange(LogCreator.Data.Data.Regions);
+        
+        foreach (var (snesAddress, comment) in LogCreator.Data.Data.Comments)
+        {
+            var parsed = CpuUtils.ParseCommentSpecialDirective(comment);
+            if (parsed == null || parsed.IncludeSrc == CpuUtils.OperandOverride.IncSrcOverride.None)
+                continue;
+            
+            var offset = Data.ConvertSnesToPc(snesAddress);
+
+            switch (parsed.IncludeSrc)
+            {
+                case CpuUtils.OperandOverride.IncSrcOverride.IncSrcStart:
+                {
+                    if (regionSnesAddrStart != -1)
+                    {
+                        // we're already inside a region, so we can't generate a new one
+                        // this is a bug in the source code, but we'll just ignore it
+                        LogCreator.OnErrorReported(offset,
+                            "Extra region directive found 'ir' inside a dynamic region. This is not supported.");
+                        continue;
+                    }
+
+                    var labelName = Data.Labels.GetLabel(snesAddress)?.Name;
+                    if ((labelName?.Length ?? 0) == 0)
+                    {
+                        LogCreator.OnErrorReported(offset, "Extra region directive found 'ir' without a label defined. This is not supported.");
+                        continue;
+                    }
+                
+                    // good to go
+                    regionName = labelName;
+                    regionSnesAddrStart = snesAddress;
+                    break;
+                }
+                case CpuUtils.OperandOverride.IncSrcOverride.IncSrcEnd:
+                {
+                    if (regionSnesAddrStart == -1)
+                    {
+                        // we're not inside a region, so we can't generate a new one
+                        LogCreator.OnErrorReported(offset, "Extra region directive found 'ie' outside a dynamic region. This is not supported.");;
+                        continue;
+                    }
+
+                    if (regionName == "")
+                    {
+                        LogCreator.OnErrorReported(offset, "Extra region directive found 'ie' without a region name defined. This is not supported.");
+                        continue;
+                    }
+                
+                    // good to go
+                    allRegions.Add(new Region {
+                        ExportSeparateFile = true,
+                        RegionName = regionName,
+                        Priority = 0,
+                        StartSnesAddress = regionSnesAddrStart,
+                        EndSnesAddress = snesAddress,
+                    });
+
+                    // reset
+                    regionName = "";
+                    regionSnesAddrStart = -1;
+                    break;
+                }
+            }
+        }
     }
 
     private readonly List<string> previousRegions = [];
@@ -151,7 +233,7 @@ public class AsmCreationInstructions : AsmCreationBase
             return null;
         
         // find any applicable regions in the surrounding context of where we are in the ROM offset
-        var applicableOrderedRegions = Data.Data.Regions
+        var applicableOrderedRegions = allRegions
             .Where(x => 
                 snesAddress >= x.StartSnesAddress && 
                 snesAddress <= x.EndSnesAddress && 
