@@ -133,13 +133,13 @@ public class AsmCreationInstructions : AsmCreationBase
                     if (regionSnesAddrStart == -1)
                     {
                         // we're not inside a region, so we can't generate a new one
-                        LogCreator.OnErrorReported(offset, "Extra region directive found 'ie' outside a dynamic region. This is not supported.");;
+                        LogCreator.OnErrorReported(offset, "Extra region directive found 'ie' outside a dynamic region. This is not supported. Ignoring");;
                         continue;
                     }
 
                     if (regionName == "")
                     {
-                        LogCreator.OnErrorReported(offset, "Extra region directive found 'ie' without a region name defined. This is not supported.");
+                        LogCreator.OnErrorReported(offset, "Extra region directive found 'ie'  name defined. This is not supported. Ignoring");
                         continue;
                     }
                 
@@ -158,6 +158,10 @@ public class AsmCreationInstructions : AsmCreationBase
                     break;
                 }
             }
+        }
+
+        if (regionSnesAddrStart != -1) {
+            LogCreator.OnErrorReported(Data.ConvertSnesToPc(regionSnesAddrStart), $"Unclosed region start directive '{regionName}', ignoring");
         }
     }
 
