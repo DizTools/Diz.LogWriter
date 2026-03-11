@@ -248,7 +248,7 @@ public class AssemblyGenerateOffset : AssemblyPartialLineGenerator
     }
     protected override TokenBase[] Generate(int offset, int length, LineGenerator.TokenExtraContext context = null)
     {
-        var hexStr = Util.NumberToBaseString(offset, Util.NumberBase.Hexadecimal, 0);
+        var hexStr = Util.NumberToBaseString(offset, Util.NumberBase.Hexadecimal, 6);
         return GenerateFromStr(Util.LeftAlign(length, hexStr));
     }
 }

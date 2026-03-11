@@ -326,11 +326,12 @@ internal class LogCreatorTempLabelGenerator
 
         var prefix = "";
         var offsetToGenerateLabelAt = Data.ConvertSnesToPc(snesAddressToGenerateLabelAt);
-
+        var flagType = snesData.GetFlag(offsetToGenerateLabelAt);
+        
         if (useHints)
         {
             // figure out if there's anything interesting going on that we might want to change the label somewhat:
-            var destinationIsOpcode = snesData.GetFlag(offsetToGenerateLabelAt) == FlagType.Opcode;
+            var destinationIsOpcode = flagType == FlagType.Opcode;
             
             // A. was this a JSR/JSL/JML/JMP, and is the destination location reached?
             if (originWasOpcode && destinationIsOpcode)
@@ -393,7 +394,14 @@ internal class LogCreatorTempLabelGenerator
             if (srcSpecialDirective is { ForceOnlyShowRawHex: true } or { DontGenerateTemporaryLabelAtDestination: true })
                 return;
             
-            prefix = RomUtil.TypeToLabel(snesData.GetFlag(offsetToGenerateLabelAt));
+            prefix = RomUtil.TypeToLabel(flagType);
+
+            if (LogCreator.Settings.NesMode)
+            {
+                // HACK: this is terrible. TODO: add proper NES mapping support to get around this issue
+                if (flagType == FlagType.Operand)
+                    return;  // skip LOOSE_OP_ in NES mode for now, almost always means the mapper is active and we're doing something wrong with address translations
+            }
             
             // final check for priority (feel free to add more conditions here as necessary)
             dontAllowOvewritingWithPlusMinus =
