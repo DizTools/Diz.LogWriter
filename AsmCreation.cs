@@ -56,7 +56,18 @@ public class AsmCreationMainBankIncludes : AsmCreationBase
         LogCreator.SwitchOutputStream(LogCreatorStreamOutput.MainStreamFilename);
         
         LogCreator.WriteIncludeFileDirective("defines.asm");
-        LogCreator.UniqueVisitedBanks.ForEach(LogCreator.WriteIncSrcLineForBank);
+
+        if (!LogCreator.Settings.NesMode)
+        {
+            // SNES (normal)
+            LogCreator.UniqueVisitedBanks.ForEach(LogCreator.WriteIncSrcLineForBank);
+        }
+        else
+        {
+            // NES ONLY
+            LogCreator.WriteIncludeFileDirective("game.asm");    
+        }
+        
         LogCreator.WriteIncludeFileDirective("labels.asm");
     }
 }
@@ -66,7 +77,11 @@ public class AsmCreationRomMap : AsmCreationBase
     protected override void Execute()
     {
         LogCreator.SwitchOutputStream(LogCreatorStreamOutput.MainStreamFilename);
+
+        if (LogCreator.Settings.NesMode) 
+            return; // skip for NES mode
         
+        // SNES mode
         LogCreator.WriteSpecialLine("map");
         LogCreator.WriteEmptyLine();
     }

@@ -13,7 +13,8 @@ namespace Diz.LogWriter;
 public class AsmCreationInstructions : AsmCreationBase
 {
     public bool EnableRegionIncSrc { get; init; } = true;
-    
+    public bool NesOutputMode { get; init; } = false; // EXPERIMENTAL
+
     private readonly List<int> visitedBanks = [];
     private int currentBank = -1;
     
@@ -28,8 +29,15 @@ public class AsmCreationInstructions : AsmCreationBase
     
     private void SwitchBanksIfNeeded(int offset)
     {
+        // experimental NES mode:
+        if (NesOutputMode)
+        {
+            // fake it for now. in reality we'll want to break up the banks
+            LogCreator.SwitchOutputStream("game.asm");
+            return; // never do anything, this is for SNES banks only
+        }
+
         // remember: in LoRom mapping, an offset like 0 will map to SNES address $808000.
-        
         var bank = GetBankFromOffset(offset);
         if (bank == currentBank) 
             return;

@@ -12,6 +12,14 @@ namespace Diz.LogWriter;
 public class LogCreator : ILogCreatorForGenerator
 {
     public LogWriterSettings Settings { get; set; }
+    
+    public enum AssemblerFlavor
+    {
+        AssemblerCa65 = 0,  // NES only (experimental)
+        AssemblerAsar = 1,  // SNES only (production-ready)
+    }
+    public AssemblerFlavor AssemblerToolFlavor { get; init; }
+    
     public ILogCreatorDataSource<IData> Data { get; init; }
     private LogCreatorOutput Output { get; set; }
     public LineGenerator LineGenerator { get; private set; }
@@ -213,7 +221,9 @@ public class LogCreator : ILogCreatorForGenerator
             new AsmCreationInstructions
             {
                 LogCreator = this,
-                EnableRegionIncSrc = !singleFileMode
+                EnableRegionIncSrc = !singleFileMode,
+                
+                NesOutputMode = Settings.NesMode, // EXTREMELY EXPERIMENTAL TODO: COMPLETE
             },
             
             // outputs all the include stuff in main.asm like "incsrc bank_C0.asm", or "incsrc labels.asm" etc.
@@ -222,6 +232,7 @@ public class LogCreator : ILogCreatorForGenerator
             {
                 LogCreator = this,
                 Enabled = !singleFileMode
+                // TODO: for NES MODE, DONT DO THIS
             },
 
             // outputs the lines in labels.asm, which includes ONLY the leftover labels that aren't defined somewhere else.

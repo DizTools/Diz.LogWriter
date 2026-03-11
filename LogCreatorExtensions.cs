@@ -1,4 +1,5 @@
-﻿using System.Linq;
+﻿using System.IO;
+using System.Linq;
 using System.Text;
 using Diz.Core.Interfaces;
 using Diz.Core.model;
@@ -264,16 +265,9 @@ public static class LogCreatorExtensions
         return string.Format(format, param);
     }
         
-    public static string GetFormattedBytes(this IReadOnlyByteSource data, int offset, int step, int bytes)
+    public static string GetFormattedBytes(this IReadOnlyByteSource data, int offset, int step, int bytes, LogCreator.AssemblerFlavor assemblerFlavor)
     {
-        var res = step switch
-        {
-            1 => "db ",
-            2 => "dw ",
-            3 => "dl ",
-            4 => "dd ",
-            _ => ""
-        };
+        var res = $"{GetDataDirectiveKeyword(step, assemblerFlavor)} ";
 
         for (var i = 0; i < bytes; i += step)
         {
@@ -301,5 +295,29 @@ public static class LogCreatorExtensions
         }
 
         return res;
+    }
+
+    private static string GetDataDirectiveKeyword(int step, LogCreator.AssemblerFlavor flavor)
+    {
+        return flavor switch
+        {
+            LogCreator.AssemblerFlavor.AssemblerCa65 => step switch
+            {
+                1 => ".byte",
+                2 => ".word",
+                3 => ".faraddr",
+                4 => ".dword",
+                _ => throw new InvalidDataException("Invalid step size: " + step)
+            },
+            LogCreator.AssemblerFlavor.AssemblerAsar => step switch
+            {
+                1 => "db",
+                2 => "dw",
+                3 => "dl",
+                4 => "dd",
+                _ => throw new InvalidDataException("Invalid step size: " + step)
+            },
+            _ => throw new InvalidDataException("Invalid assembler flavor: " + flavor)
+        };
     }
 }

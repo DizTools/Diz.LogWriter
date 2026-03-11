@@ -1,4 +1,5 @@
 ﻿#nullable enable
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Diz.Core.Interfaces;
@@ -57,8 +58,17 @@ internal class LogCreatorTempLabelGenerator
         public int DestOffset;
         
         public int Depth = 1;    // depth of 1 is "+" or "-", 2 is "++" or "--", etc
-        public string Label => new(IsForwardBranch ? '+' : '-', Depth);
+
         public bool IsForwardBranch = true;
+
+        public string GenerateLabel(LogCreator.AssemblerFlavor assemblerToolFlavor)
+        {
+            // this is a real annoyance for ca65 TODO
+            
+            return assemblerToolFlavor != LogCreator.AssemblerFlavor.AssemblerAsar 
+                ? throw new InvalidOperationException("Only AssemblerAsar is supported for label generation") 
+                : new string(IsForwardBranch ? '+' : '-', Depth);
+        }
     }
 
     private void EmitInternalPlusMinusBranches(List<Branch> validBranches)
@@ -136,7 +146,9 @@ internal class LogCreatorTempLabelGenerator
             
             // assumes any existing local label (+/-) we're replacing is IDENTICAL to what we're adding
             // otherwise, it's going to create an error
-            Data.TemporaryLabelProvider.AddOrReplaceTemporaryLabel(snesDestOffset, new TempLabel { Name = stateToUse.Label });
+            var generatedLabelNameStr = stateToUse.GenerateLabel(LogCreator.AssemblerToolFlavor);
+            var label = new TempLabel { Name = generatedLabelNameStr };
+            Data.TemporaryLabelProvider.AddOrReplaceTemporaryLabel(snesDestOffset, label);
         }
     }
 
@@ -175,6 +187,7 @@ internal class LogCreatorTempLabelGenerator
         var validBankBranches = new List<Branch>();
         
         // go through each bank, generate +/- labels for valid branches found. do not let these
+        // TODO: wont necessarily work for NES, need to not cross mapper boundaries
         for (var sourceOffset = 0; ;sourceOffset++)
         {
             var inBounds = sourceOffset < romSize;

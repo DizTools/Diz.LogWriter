@@ -85,19 +85,22 @@ public class AssemblyGenerateCode : AssemblyPartialLineGenerator
         if (snesApi == null)
             throw new NullReferenceException("SnesApi not present, can't generate line");
 
+        // NES doesn't use mnemonic hints like .b and .w after instructions
+        var showMnemonicHint = LogCreator.AssemblerToolFlavor != LogWriter.LogCreator.AssemblerFlavor.AssemblerCa65;
+
         var code = snesApi.GetFlag(offset) switch
         {
-            FlagType.Opcode => RenderInstructionStr(offset),
+            FlagType.Opcode => RenderInstructionStr(offset, showMnemonicHint),
             
             // treat all these as 8bit data
             FlagType.Unreached or 
             FlagType.Operand or 
             FlagType.Data8Bit or FlagType.Graphics or FlagType.Music or FlagType.Empty => 
-                snesApi.GetFormattedBytes(offset, 1, bytes),
+                snesApi.GetFormattedBytes(offset, 1, bytes, LogCreator.AssemblerToolFlavor),
             
-            FlagType.Data16Bit => snesApi.GetFormattedBytes(offset, 2, bytes),
-            FlagType.Data24Bit => snesApi.GetFormattedBytes(offset, 3, bytes),
-            FlagType.Data32Bit => snesApi.GetFormattedBytes(offset, 4, bytes),
+            FlagType.Data16Bit => snesApi.GetFormattedBytes(offset, 2, bytes, LogCreator.AssemblerToolFlavor),
+            FlagType.Data24Bit => snesApi.GetFormattedBytes(offset, 3, bytes, LogCreator.AssemblerToolFlavor),
+            FlagType.Data32Bit => snesApi.GetFormattedBytes(offset, 4, bytes, LogCreator.AssemblerToolFlavor),
             FlagType.Pointer16Bit => snesApi.GeneratePointerStr(offset, 2),
             FlagType.Pointer24Bit => snesApi.GeneratePointerStr(offset, 3),
             FlagType.Pointer32Bit => snesApi.GeneratePointerStr(offset, 4),
@@ -112,9 +115,9 @@ public class AssemblyGenerateCode : AssemblyPartialLineGenerator
         return GenerateFromStr(Util.LeftAlign(length, code));
     }
 
-    private string RenderInstructionStr(int offset)
+    private string RenderInstructionStr(int offset, bool showMnemonicHint)
     {
-        var cpuInstructionDataFormatted = Data.GetInstructionData(offset);
+        var cpuInstructionDataFormatted = Data.GetInstructionData(offset, showMnemonicHint);
         
         // WARNING: this introduces a side effect populating data that affects the assembly generator output.
         // it means the CPU instructions all have to be generated FIRST before the defines.asm can be created.
@@ -202,8 +205,11 @@ public class AssemblyGenerateIncSrc : AssemblyPartialLineGenerator
         return GenerateFromStr(Util.LeftAlign(length, incSrcDirective));
     }
     
-    private static string BuildIncSrcDirective(string val) => 
-        $"incsrc \"{val}\"";
+    private string BuildIncSrcDirective(string val)
+    {
+        var directive = LogCreator.Settings.NesMode ? ".include" : "incsrc";
+        return $"{directive} \"{val}\"";
+    }
 }
     
 public class AssemblyGenerateIndirectAddress : AssemblyPartialLineGenerator
