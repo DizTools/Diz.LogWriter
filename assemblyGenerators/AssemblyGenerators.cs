@@ -107,7 +107,7 @@ public class AssemblyGenerateCode : AssemblyPartialLineGenerator
             
             FlagType.Text =>
                 // note: this won't always respect the line length because it can generate, on the same line, multiple strings, etc.
-                Data.CreateAssemblyFormattedTextLine(offset, bytes),
+                Data.CreateAssemblyFormattedTextLine(offset, bytes, LogCreator.AssemblerToolFlavor),
             
             _ => ""
         };

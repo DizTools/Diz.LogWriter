@@ -11,7 +11,7 @@ namespace Diz.LogWriter;
 
 public static class LogCreatorExtensions
 {
-    public static string CreateAssemblyFormattedTextLine(this ILogCreatorDataSource<IData> data, int offset, int count)
+    public static string CreateAssemblyFormattedTextLine(this ILogCreatorDataSource<IData> data, int offset, int count, LogCreator.AssemblerFlavor flavor)
     {
         var rawStr = new StringBuilder();
         for (var i = 0; i < count; i++)
@@ -19,17 +19,22 @@ public static class LogCreatorExtensions
             rawStr.Append((char)(data.GetRomByte(offset + i) ?? 0));
         }
 
-        return CreateAssemblyFormattedTextLine(rawStr.ToString());
+        return CreateAssemblyFormattedTextLine(rawStr.ToString(), flavor);
     }
         
-    public static string CreateAssemblyFormattedTextLine(string rawStr)
+    public static string CreateAssemblyFormattedTextLine(string rawStr, LogCreator.AssemblerFlavor flavor)
     {
         // important: Asar will not accept null characters printed inside quoted text. so we need to break up text lines.
         // also, asar seems to have issues with exclamation points in text
         bool IsPrintableAsciiCharacter(char c) => 
             c >= 32 && c <= 127 && c != '"' && c != '!';
-
-        var outputStr = new StringBuilder("db ");
+        
+        var directive = flavor switch
+        {
+            LogCreator.AssemblerFlavor.AssemblerCa65 => ".byte",
+            _ => "db"
+        };
+        var outputStr = new StringBuilder(directive).Append(' ');
         var inQuotedSection = false;
 
         bool StartQuotedSectionIfNeeded(bool printedSomethingBeforeThis)
