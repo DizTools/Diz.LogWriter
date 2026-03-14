@@ -4,7 +4,6 @@ using System.Linq;
 using Diz.Core.Interfaces;
 using Diz.Core.model.snes;
 using Diz.Core.util;
-using Diz.Cpu._65816;
 using JetBrains.Annotations;
 
 namespace Diz.LogWriter;
@@ -106,14 +105,14 @@ public class AsmCreationInstructions : AsmCreationBase
         foreach (var (snesAddress, comment) in LogCreator.Data.Data.Comments)
         {
             var parsed = CpuUtils.ParseCommentSpecialDirective(comment);
-            if (parsed == null || parsed.IncludeSrc == CpuUtils.OperandOverride.IncSrcOverride.None)
+            if (parsed == null || parsed.IncludeSrc == OperandOverride.IncSrcOverride.None)
                 continue;
             
             var offset = Data.ConvertSnesToPc(snesAddress);
 
             switch (parsed.IncludeSrc)
             {
-                case CpuUtils.OperandOverride.IncSrcOverride.IncSrcStart:
+                case OperandOverride.IncSrcOverride.IncSrcStart:
                 {
                     if (regionSnesAddrStart != -1)
                     {
@@ -136,7 +135,7 @@ public class AsmCreationInstructions : AsmCreationBase
                     regionSnesAddrStart = snesAddress;
                     break;
                 }
-                case CpuUtils.OperandOverride.IncSrcOverride.IncSrcEnd:
+                case OperandOverride.IncSrcOverride.IncSrcEnd:
                 {
                     if (regionSnesAddrStart == -1)
                     {
