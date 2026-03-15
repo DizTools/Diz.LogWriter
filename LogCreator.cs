@@ -431,7 +431,7 @@ public class LogCreator : ILogCreatorForGenerator
 
         // example of a valid mapping looks like this:
         // OriginalNonOverridenOperand1 = "$03"
-        // OverriddenOperand1 = "!num_humans"
+        // DefineNameUsed = "!num_humans"
 
         // validate: needs to be a hex number
         var originalValue = instruction.OriginalNonOverridenOperand1;
@@ -439,7 +439,7 @@ public class LogCreator : ILogCreatorForGenerator
             return;
         
         // validate: needs to look like a !define and no expressions or other stuff
-        var defineName = instruction.OverriddenOperand1;
+        var defineName = instruction.DefineNameUsed;
         if (!defineName.StartsWith('!') ||  // must start with this
             defineName.Contains('-') ||
             defineName.Contains('+') ||
