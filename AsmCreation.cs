@@ -56,18 +56,7 @@ public class AsmCreationMainBankIncludes : AsmCreationBase
         LogCreator.SwitchOutputStream(LogCreatorStreamOutput.MainStreamFilename);
         
         LogCreator.WriteIncludeFileDirective("defines.asm");
-
-        if (!LogCreator.Settings.NesMode)
-        {
-            // SNES (normal)
-            LogCreator.UniqueVisitedBanks.ForEach(LogCreator.WriteIncSrcLineForBank);
-        }
-        else
-        {
-            // NES ONLY
-            LogCreator.WriteIncludeFileDirective("game.asm");    
-        }
-        
+        LogCreator.UniqueVisitedBanks.ForEach(LogCreator.WriteIncSrcLineForBank);
         LogCreator.WriteIncludeFileDirective("labels.asm");
     }
 }
