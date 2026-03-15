@@ -19,6 +19,18 @@ public class AsmCreationInstructions : AsmCreationBase
     
     private int GetBankFromOffset(int offset)
     {
+        // experimental NES mode:
+        if (NesOutputMode)
+        {
+            // fake it for now. in reality we'll want to break up the banks
+            // LogCreator.SwitchOutputStream("game.asm");
+            
+            // TODO: this literally only works correctly for MMC mapper #1
+            //  need to implement proper mapping support:
+            return offset / 0x04000;
+        }
+        
+        
         var snesAddress = Data.ConvertPCtoSnes(offset);
         if (snesAddress == -1)
             throw new InvalidDataException($"Rom offset required to map to SNES address: {offset}");
@@ -28,14 +40,6 @@ public class AsmCreationInstructions : AsmCreationBase
     
     private void SwitchBanksIfNeeded(int offset)
     {
-        // experimental NES mode:
-        if (NesOutputMode)
-        {
-            // fake it for now. in reality we'll want to break up the banks
-            LogCreator.SwitchOutputStream("game.asm");
-            return; // never do anything, this is for SNES banks only
-        }
-
         // remember: in LoRom mapping, an offset like 0 will map to SNES address $808000.
         var bank = GetBankFromOffset(offset);
         if (bank == currentBank) 
