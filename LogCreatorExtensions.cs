@@ -218,6 +218,8 @@ public static class LogCreatorExtensions
 
     public static string GeneratePointerStr(this ISnesApi<IData> data, int offset, int numBytes, LogCreator.AssemblerFlavor assemblerFlavor)
     {
+        // NOTE: update Cpu65816::GetPointerStr() with any changes here (maybe can merge at some point)
+        
         uint ia, pointerAddr;
         int numDigits;
         string directive;
@@ -271,14 +273,17 @@ public static class LogCreatorExtensions
         string target;
 
         if (iaLabel == "") {
+            // numerical output
             target = Util.NumberToBaseString(pointerAddr, Util.NumberBase.Hexadecimal, numDigits, true);
         } else {
+            // label output
             target = iaLabel;
+            
+            // NES: we have to clip to the correct# bytes or it'll be out of range. (asar on SNES magically handles this for us)
             if (assemblerFlavor == LogCreator.AssemblerFlavor.AssemblerCa65) {
-                // we have to clip to the correct# bytes or it'll be out of range. (asar on SNES magically handles this for us)
                 target = numBytes switch
                 {
-                    2 => $"({iaLabel} & $FFFF)",
+                    2 => RomUtil.NesHackMmc1BankRelativeAddr((int)ia, iaLabel),
                     3 => $"({iaLabel} & $FFFFFF)",
                     _ => iaLabel
                 };
