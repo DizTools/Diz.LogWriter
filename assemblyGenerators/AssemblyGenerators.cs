@@ -140,6 +140,10 @@ public class AssemblyGenerateOrg : AssemblyPartialLineGenerator
     {
         if (context is not LineGenerator.TokenExtraContextSnes snesContext)
             throw new ArgumentException("internal parser error: SNES Context required.");
+
+        // NES mode doesn't currently do this
+        if (LogCreator.Settings.NesMode)
+            return GenerateFromStr("");
         
         var snesAddress = snesContext.SnesAddress;
         
