@@ -304,15 +304,26 @@ public class AsmCreationInstructions : AsmCreationBase
         }
     }
 
-    private void WriteBlankLineIfStartingNewParagraph(int offset)
+    private void WriteBlankLineIfStartingNewParagraph(int offset, bool blankLineForReadPoints = false)
     {
         // skip if we're in the middle of a pointer table
         if (Data.GetFlag(offset) is FlagType.Pointer16Bit or FlagType.Pointer24Bit or FlagType.Pointer32Bit)
             return;
 
-        if (Data.IsLocationAReadPoint(offset) || AreAnyLabelsPresentAt(offset)) 
+        if (AreAnyLabelsPresentAt(offset))
+        {
             LogCreator.WriteEmptyLine();
-    }
+            return;
+        }
+
+        if (blankLineForReadPoints)  {
+            // I find this to generate too much whitespace. refine if you want it
+            var prevOffset = Util.ClampIndex(offset - 1, Data.GetRomSize());
+            var readPointChanged = Data.IsLocationAReadPoint(offset) != Data.IsLocationAReadPoint(prevOffset);
+            if (readPointChanged)
+                LogCreator.WriteEmptyLine();
+        }
+}
 
     private bool AreAnyLabelsPresentAt(int offset)
     {

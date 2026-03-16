@@ -112,6 +112,7 @@ public static class LogCreatorExtensions
     {
         var snesApi = data.Data.GetSnesApi();
         var flagType = snesApi.GetFlag(offset);
+        var readPoint = data.IsLocationAReadPoint(offset);
 
         if (flagType == FlagType.Opcode)
             return data.GetInstructionLength(offset);
@@ -138,6 +139,9 @@ public static class LogCreatorExtensions
                 break;
 
             if (snesApi.GetFlag(offset + min) != flagType)
+                break;
+
+            if (data.IsLocationAReadPoint(offset + min) != readPoint)
                 break;
 
             var endSnesAddress = data.ConvertPCtoSnes(offset + min);
