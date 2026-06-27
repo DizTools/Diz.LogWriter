@@ -218,7 +218,7 @@ internal class LogCreatorTempLabelGenerator
         }
     }
 
-    private Branch? TryGeneratePlusMinusLabelAtOffset(ISnesData snesData, int sourceOffset)
+    private Branch? TryGeneratePlusMinusLabelAtOffset(ISnesApi<IData> snesData, int sourceOffset)
     {
         // found our opcode. does it qualify as a conditional branch/subroutine call?
         // this isn't going to be foolproof but it should catch 95% of the stuff we most care about

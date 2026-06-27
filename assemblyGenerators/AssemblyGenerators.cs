@@ -278,9 +278,15 @@ public class AssemblyGenerateDataBytes : AssemblyPartialLineGenerator
             return "";
             
         var bytes = "";
-        for (var i = 0; i < Data.GetInstructionLength(offset); i++)
+
+        var cpu = new Cpu65C816();
+        for (var i = 0; i < cpu.GetInstructionLength(Data, offset); i++)
         {
-            var romByte = Data.GetRomByteUnsafe(offset + i);
+            var romByteNullable = Data.GetRomByte(offset + i);
+            if (!romByteNullable.HasValue)
+                break;
+            
+            var romByte = romByteNullable.Value;
             bytes += Util.NumberToBaseString(romByte, Util.NumberBase.Hexadecimal);
         }
 

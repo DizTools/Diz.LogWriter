@@ -332,7 +332,7 @@ public static class LogCreatorExtensions
             switch (step)
             {
                 case 1:
-                    res += Util.NumberToBaseString(data.GetRomByteUnsafe(offset + i), Util.NumberBase.Hexadecimal, 2, true);
+                    res += Util.NumberToBaseString(data.GetRomByte(offset + i) ?? 0, Util.NumberBase.Hexadecimal, 2, true);
                     break;
                 case 2:
                     res += Util.NumberToBaseString(data.GetRomWord(offset + i) ?? 0, Util.NumberBase.Hexadecimal, 4, true);
