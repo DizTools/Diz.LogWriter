@@ -13,6 +13,11 @@
     </ItemGroup>
 
     <ItemGroup>
+      <!-- generated-file templates written into exported game repos; loaded by assets/Templates.cs -->
+      <EmbeddedResource Include="assets\templates\**" Exclude="assets\templates\.gitattributes" />
+    </ItemGroup>
+
+    <ItemGroup>
       <PackageReference Include="CsvHelper">
         <Version>30.0.3</Version>
       </PackageReference>

@@ -47,23 +47,6 @@ public class BuildFileGenerator
     /// <summary>The user-owned, game-specific half of the build. Seeded once, never overwritten.</summary>
     public const string ConfigFileName = "build-config.ninja";
 
-    private const string DefaultConfig = """
-        # build-config.ninja -- game-specific build settings.
-        # Seeded once by DiztinGUIsh, then yours: edit freely, re-export never overwrites it.
-        # NOTE (Windows): ninja runs commands with no shell; a RELATIVE path to an .exe
-        # must use backslashes (e.g. bin\asar.exe). Bare names resolve from PATH.
-
-        # the assembler
-        asar = asar
-        # where the assembled ROM is written
-        out_rom = output/rebuilt.sfc
-        # original ROM for 'ninja verify' byte-identity check
-        orig_rom = output/original.sfc
-        # optional extra asset layers searched BEFORE assets/src, e.g.:
-        #   mod_roots = --search assets/mymod
-        mod_roots =
-        """;
-
     private readonly BuildFileGeneratorSettings settings;
 
     public BuildFileGenerator(BuildFileGeneratorSettings settings = null) =>
@@ -79,7 +62,7 @@ public class BuildFileGenerator
         if (File.Exists(path))
             return;
 
-        File.WriteAllText(path, DefaultConfig.Replace("\r\n", "\n") + "\n", new UTF8Encoding(false));
+        File.WriteAllText(path, Templates.Load(ConfigFileName), new UTF8Encoding(false));
     }
 
     /// <summary>Collect the asset regions that the build needs to rebuild.</summary>
