@@ -35,5 +35,6 @@ public class AsmCreationBuildFiles : AsmCreationBase
         var vendoring = new ToolVendoring();
         vendoring.VendorInto(ExportRootDir);
         vendoring.WriteWrapper(ExportRootDir);
+        vendoring.WriteBuildingDoc(ExportRootDir);
     }
 }
