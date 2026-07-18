@@ -334,7 +334,7 @@ internal class LogCreatorTempLabelGenerator
                     case 0x20:  // JSR
                         prefix = "CODE_FN";
                         break;
-                    case 0x22:  // JML
+                    case 0x22:  // JSL
                         prefix = "CODE_FL";
                         break;
                     default:
