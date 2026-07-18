@@ -5,6 +5,7 @@ using Diz.Core.Interfaces;
 using Diz.Core.model.snes;
 using Diz.Core.util;
 using Diz.Cpu._65816;
+using Diz.LogWriter.assets;
 using JetBrains.Annotations;
 
 namespace Diz.LogWriter;
@@ -13,7 +14,27 @@ namespace Diz.LogWriter;
 public class AsmCreationInstructions : AsmCreationBase
 {
     public bool EnableRegionIncSrc { get; init; } = true;
-    
+
+    // Optional: when both are set, regions marked with an ExportType other than 'Assembly'
+    // have their bytes written out as standalone asset files and replaced in the .asm with
+    // an `incbin`. Left null, nothing changes and every region exports inline `db` bytes
+    // exactly as before.
+    [CanBeNull] public IRegionAssetExportService AssetExportService { get; init; }
+
+    // PROJECT root, not the assembly output dir -- assets are hand-edited source and must not
+    // live inside the tree that export rewrites.
+    [CanBeNull] public string AssetExportRootDir { get; init; }
+
+    // relative path from the .asm's directory back to the project root (e.g. ".."), so the
+    // emitted incbin resolves from wherever the .asm actually lives.
+    public string AssetAsmToProjectRootPrefix { get; init; } = "";
+
+    private bool AssetExportEnabled =>
+        AssetExportService != null && !string.IsNullOrEmpty(AssetExportRootDir);
+
+    // regions we've already emitted an incbin for, so a region can't be written twice
+    private readonly HashSet<string> exportedAssetRegions = [];
+
     private readonly List<int> visitedBanks = [];
     private int currentBank = -1;
     
@@ -271,6 +292,11 @@ public class AsmCreationInstructions : AsmCreationBase
         SwitchBanksIfNeeded(offset);
         CheckIfRegionChanged(offset);
 
+        // if an asset region starts here, emit one `incbin` and skip its bytes entirely,
+        // rather than emitting them inline. must happen before the normal line generation.
+        if (TryWriteAssetRegion(ref offset))
+            return;
+
         WriteBlankLineIfStartingNewParagraph(offset);
         GenerateAndWriteCodeOutputLinesForRomOffset(offset);    // the important thing
         LogCreator.DataErrorChecking.CheckForErrorsAt(offset);
@@ -281,6 +307,80 @@ public class AsmCreationInstructions : AsmCreationBase
         //  put region includes in the wrong spot.  Happens if there's regions that begin in the middle of 
         //  boundaries like inside the middle byte of data labelled as 24-bit.
         offset += LogCreator.GetLineByteLength(offset);
+    }
+
+    /// <summary>
+    /// If an asset region begins exactly at this offset, write its bytes out to a standalone
+    /// asset file, emit an `incbin` in place of them, and advance past the whole region.
+    /// Returns true if it handled the offset (caller must not also emit normal lines).
+    /// </summary>
+    private bool TryWriteAssetRegion(ref int offset)
+    {
+        if (!AssetExportEnabled)
+            return false;
+
+        var region = GetAssetRegionStartingAt(offset);
+        if (region == null)
+            return false;
+
+        var startPc = Data.ConvertSnesToPc(region.StartSnesAddress);
+        var endPc = Data.ConvertSnesToPc(region.EndSnesAddress);
+
+        // EndSnesAddress is treated as EXCLUSIVE, matching Data.GetRegion() and the region
+        // size math above. If that's ever changed, this must change with it -- getting it
+        // wrong here shifts every byte after the region.
+        var length = endPc - startPc;
+        if (length <= 0)
+            throw new InvalidDataException(
+                $"Asset region '{region.RegionName}' has a non-positive length ({length}).");
+
+        // an asset region must sit inside one bank: the incbin lands in that bank's file,
+        // and a region spanning banks would silently put bytes in the wrong place.
+        if (GetBankFromOffset(startPc) != GetBankFromOffset(endPc - 1))
+            throw new InvalidDataException(
+                $"Asset region '{region.RegionName}' crosses a bank boundary, which isn't supported.");
+
+        var directive = AssetExportService.ExportRegion(
+            region, AssetExportRootDir, AssetAsmToProjectRootPrefix);
+        if (directive == null)
+            return false;
+
+        LogCreator.WriteEmptyLine();
+        LogCreator.WriteHeaderForNewlyIncludedFile(offset, "asset", region.RegionName, length);
+        LogCreator.WriteLine(directive);
+        LogCreator.WriteEmptyLine();
+
+        exportedAssetRegions.Add(region.RegionName);
+        offset += length;
+        return true;
+    }
+
+    [CanBeNull]
+    private IRegion GetAssetRegionStartingAt(int offset)
+    {
+        var snesAddress = Data.ConvertPCtoSnes(offset);
+        if (snesAddress == -1)
+            return null;
+
+        var matching = allRegions
+            .Where(x => x.StartSnesAddress == snesAddress && AssetExportService.IsAssetRegion(x))
+            .ToList();
+
+        if (matching.Count == 0)
+            return null;
+
+        if (matching.Count > 1)
+            throw new InvalidDataException(
+                "Multiple asset regions start at the same address " +
+                $"(${snesAddress:X6}): {string.Join(", ", matching.Select(x => x.RegionName))}. " +
+                "This is ambiguous -- only one region can own a range of bytes.");
+
+        var region = matching[0];
+        if (exportedAssetRegions.Contains(region.RegionName))
+            throw new InvalidDataException(
+                $"Asset region '{region.RegionName}' was already exported. Region names must be unique.");
+
+        return region;
     }
 
     private void GenerateAndWriteCodeOutputLinesForRomOffset(int offset)

@@ -1,9 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
+using System.Linq;
 using Diz.Core.export;
 using Diz.Core.Interfaces;
 using Diz.Core.util;
+using Diz.LogWriter.assets;
 using Diz.LogWriter.util;
 using JetBrains.Annotations;
 
@@ -187,6 +190,16 @@ public class LogCreator : ILogCreatorForGenerator
         // we're ready to start.
     }
 
+    /// <summary>
+    /// Normalize a relative path for use in generated build/assembly files: forward slashes
+    /// (checked-in files must not carry host-specific separators), and "" for "same dir".
+    /// </summary>
+    private static string NormalizeRel(string path)
+    {
+        var normalized = path.Replace('\\', '/').TrimEnd('/');
+        return normalized == "." ? "" : normalized;
+    }
+
     public List<IAsmCreationStep> Steps { get; private set; }
 
     public void RegisterSteps()
@@ -201,11 +214,43 @@ public class LogCreator : ILogCreatorForGenerator
         // need to come before the assembly code that uses them.
         
         var singleFileMode = Settings.Structure == LogWriterSettings.FormatStructure.SingleFile;
-            
+
+        // Asset export (regions that export as .bin/PNG instead of inline db bytes).
+        // Self-activating: with no asset-typed regions everything below stays null/disabled
+        // and output is byte-for-byte unchanged. The OutputToString guard matters because
+        // that mode has no real output directory, and asset export writes actual files.
+        var regions = Data?.Data?.Regions?.ToList() ?? [];
+        var hasAssetRegions = !Settings.OutputToString &&
+                              regions.Any(r => r.ExportType != RegionExportType.Assembly);
+
+        // Two different directories; conflating them is a data-loss bug:
+        //   asmOutputDir   - .asm output (e.g. <project>/generated), REWRITTEN on every export.
+        //   projectRootDir - assets, build.ninja, tools. Assets are hand-edited source and
+        //                    must never sit inside the regenerated tree.
+        string projectRootDir = null, asmOutputDir = null, asmToProjectRoot = "", mainAsmRelPath = null;
+        if (hasAssetRegions)
+        {
+            asmOutputDir = Path.GetFullPath(Settings.BuildFullOutputPath());
+            projectRootDir = !string.IsNullOrEmpty(Settings.BaseOutputPath)
+                ? Path.GetFullPath(Settings.BaseOutputPath)
+                : asmOutputDir;
+
+            asmToProjectRoot = NormalizeRel(Path.GetRelativePath(asmOutputDir, projectRootDir));
+            mainAsmRelPath = NormalizeRel(
+                Path.Combine(Path.GetRelativePath(projectRootDir, asmOutputDir), "main.asm"));
+        }
+
+        var assetExportService = hasAssetRegions
+            ? new RegionAssetExportService(
+                Data,                       // ILogCreatorDataSource is an IReadOnlyByteSource
+                Data,                       //   ...and an ISnesAddressConverter
+                [new BinaryRegionAssetExporter(), new GfxRegionAssetExporter()])
+            : null;
+
         Steps =
         [
             new AsmCreationRomMap { LogCreator = this },
-            
+
             // REQUIRED: THE MEAT! outputs all the actual disassembly instructions in each of the bank files.
             // this step also (implicitly) defines labels as they're output, and marks them as "visited".
             // limitation: for now, this introduces a side effect of outputting "visitedDefines",
@@ -213,7 +258,12 @@ public class LogCreator : ILogCreatorForGenerator
             new AsmCreationInstructions
             {
                 LogCreator = this,
-                EnableRegionIncSrc = !singleFileMode
+                EnableRegionIncSrc = !singleFileMode,
+
+                // both null unless the project actually has asset regions
+                AssetExportService = assetExportService,
+                AssetExportRootDir = projectRootDir,
+                AssetAsmToProjectRootPrefix = asmToProjectRoot,
             },
             
             // outputs all the include stuff in main.asm like "incsrc bank_C0.asm", or "incsrc labels.asm" etc.
@@ -290,6 +340,20 @@ public class LogCreator : ILogCreatorForGenerator
             {
                 LogCreator = this,
                 Defines = visitedDefines,   // WARNING: generated via side effect of AsmCreationInstructions
+            },
+
+            // optional: generate the build system (build.ninja + wrapper) and vendor the
+            // asset codecs in, so the exported repo can rebuild the ROM without Diz.
+            // must come last: it needs to know which regions were exported as assets.
+            new AsmCreationBuildFiles
+            {
+                Enabled = hasAssetRegions && !Settings.OutputToString,
+                LogCreator = this,
+                ExportRootDir = projectRootDir,
+                Regions = regions,
+                GeneratorSettings = mainAsmRelPath == null
+                    ? null
+                    : new BuildFileGeneratorSettings { MainAsmPath = mainAsmRelPath },
             },
         ];
     }

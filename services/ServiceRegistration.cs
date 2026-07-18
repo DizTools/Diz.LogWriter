@@ -1,5 +1,6 @@
 ﻿using Diz.Core;
 using Diz.Core.export;
+using Diz.LogWriter.assets;
 using Diz.LogWriter.util;
 using LightInject;
 
@@ -11,6 +12,11 @@ public class LogWriterServiceRegistration : ICompositionRoot
     {
         serviceRegistry.Register<ISampleAssemblyTextGenerator, SampleAssemblyTextGenerator>();
         serviceRegistry.Register<LogWriterSettings, ISampleAssemblyTextGenerator>(CreateSampleAssemblyFromSettings);
+
+        // region asset exporters. named registrations so GetAllInstances<> picks up every
+        // one of them; the service matches on RegionExportType, not on the name.
+        serviceRegistry.Register<IRegionAssetExporter, BinaryRegionAssetExporter>("bin");
+        serviceRegistry.Register<IRegionAssetExporter, GfxRegionAssetExporter>("gfx");
     }
 
     private static ISampleAssemblyTextGenerator CreateSampleAssemblyFromSettings(IServiceFactory factory,
