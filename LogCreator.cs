@@ -28,8 +28,8 @@ public class LogCreator : ILogCreatorForGenerator
     private Dictionary<string, string> visitedDefines = new();
     
     // root (parentless) file-producing regions, ordered by StartSnesAddress ascending -- these
-    // get an `incsrc` in main.asm. Populated by AsmCreationInstructions from the laminar tree
-    // (see docs/diz/regions-as-partition-plan.md §A.4); replaces the old bank-number list.
+    // get an `incsrc` in main.asm. Populated by AsmCreationInstructions from the laminar tree;
+    // replaces the old bank-number list.
     public List<IRegion> RootRegions { get; } = [];
 
     public class ProgressEvent
@@ -246,7 +246,7 @@ public class LogCreator : ILogCreatorForGenerator
             ? new RegionAssetExportService(
                 Data,                       // ILogCreatorDataSource is an IReadOnlyByteSource
                 Data,                       //   ...and an ISnesAddressConverter
-                [new BinaryRegionAssetExporter(), new GfxRegionAssetExporter()])
+                [new BinaryRegionAssetExporter(), new GfxRegionAssetExporter(), new BrrRegionAssetExporter()])
             : null;
 
         Steps =
@@ -409,6 +409,14 @@ public class LogCreator : ILogCreatorForGenerator
         WriteSpecialLine("org", context: new LineGenerator.TokenExtraContextSnes(snesAddress));
         WriteEmptyLine();
     }
+
+    // Suppress / restore asar's bank-border check (E5032) around a file-producing region whose
+    // extent legitimately crosses a SNES bank boundary. HiROM is linear across banks C0-FF, so
+    // the crossing is correct, but asar flags any ORG block that crosses a bank. Emitted scoped
+    // (top + end of that one file) by AsmCreationInstructions so the check still guards the rest
+    // of the export.
+    public void WriteBankCrossCheckDisable() => WriteSpecialLine("bankcross");
+    public void WriteBankCrossCheckRestore() => WriteSpecialLine("bankcrosson");
 
     protected internal void SwitchOutputStream(string streamName)
     {

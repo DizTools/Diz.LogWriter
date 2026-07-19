@@ -37,8 +37,7 @@ public class BuildFileGeneratorSettings
 /// registering another binding rather than editing the generator body.
 ///
 /// Dispatch mirrors <see cref="BinaryAssetExporterBase"/>: an asset is built by the binding
-/// whose <see cref="TypePrefix"/> its AssetType starts with. See regions-as-partition-plan.md
-/// §B.2/§B.3.
+/// whose <see cref="TypePrefix"/> its AssetType starts with.
 /// </summary>
 public sealed class BuildToolBinding
 {
@@ -106,10 +105,15 @@ public class BuildFileGenerator
     /// <summary>Shared tool filename. Always vendored + declared, since romcheck (verify) needs it.</summary>
     public const string SharedToolFile = "gfxpack.py";
 
+    /// <summary>Ninja var name of the generic verbatim codec (BRR audio, and later palette/tilemap).</summary>
+    private const string BinpackToolVar = "binpack";
+
+    /// <summary>The generic passthrough codec filename (vendored alongside gfxpack).</summary>
+    public const string BinpackToolFile = "binpack.py";
+
     /// <summary>
-    /// The codec bindings, keyed by AssetType prefix. Today only gfx is wired; this is the one
-    /// place a new asset type (e.g. BRR under "audio.") gets added -- register a binding, and the
-    /// per-asset build edges pick it up by prefix. See regions-as-partition-plan.md §B.3.
+    /// The codec bindings, keyed by AssetType prefix. This is the one place a new asset type
+    /// gets added -- register a binding, and the per-asset build edges pick it up by prefix.
     /// </summary>
     public static readonly IReadOnlyList<BuildToolBinding> DefaultToolBindings = new[]
     {
@@ -126,6 +130,26 @@ public class BuildFileGenerator
             CompileDescription = "gfxpack compile $name",
             SeedCommand = $"python ${SharedToolVar} seed --name $name $search_roots",
             SeedDescription = "gfxpack seed $name",
+        },
+
+        // audio.* -> BRR (and later any other verbatim binary asset) via binpack. Runs off its
+        // OWN tool var (declares a `binpack = ...` line), unlike gfx which reuses the shared
+        // gfxpack var. The editable source is `.brr`; binpack resolves that extension from the
+        // manifest's `audio.ext` block (written by BrrRegionAssetExporter), so the commands pass
+        // NO --ext -- the manifest is the single source of truth (no `--ext` on the commands).
+        new BuildToolBinding
+        {
+            TypePrefix = "audio.",
+            ToolVar = BinpackToolVar,
+            ToolFile = BinpackToolFile,
+            SourceExtension = ".brr",
+            CompiledExtension = ".bin",
+            CompileRule = "audio_compile",
+            SeedRule = "audio_seed",
+            CompileCommand = $"python ${BinpackToolVar} compile --name $name $search_roots --out $out",
+            CompileDescription = "binpack compile $name",
+            SeedCommand = $"python ${BinpackToolVar} seed --name $name $search_roots",
+            SeedDescription = "binpack seed $name",
         },
     };
 

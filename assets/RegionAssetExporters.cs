@@ -213,3 +213,70 @@ public class GfxRegionAssetExporter : BinaryAssetExporterBase
         return cellHeight;
     }
 }
+
+/// <summary>
+/// Asset export for raw SNES BRR (ADPCM) audio streams -- the second consumer of the generic
+/// asset seam, and the case bank-crossing asset regions were designed for (some games store BRR
+/// samples that cross bank boundaries). Dispatched by the "audio." AssetType prefix, exactly
+/// like gfx is by "gfx." (BinaryAssetExporterBase.CanExport).
+///
+/// BRR needs NO codec: a .brr file IS the raw ADPCM stream, so the round-trip is a verbatim
+/// byte copy handled by the vendored `binpack.py`, not a planar encoder. What Diz writes here
+/// is the same shape as gfx: a verbatim `.bin` SEED plus a manifest. `binpack seed` turns the
+/// seed into the editable `.brr` payload (the manifest's `audio.ext` tells it which extension);
+/// `binpack compile` turns that `.brr` back into `build/assets/audio/&lt;name&gt;.bin`, which is
+/// what the assembler `incbin`s. So FileExtension is ".bin" here (the seed + incbin target),
+/// NOT ".brr" -- ".brr" is the EDITABLE-source extension, carried by the manifest's `audio.ext`
+/// block and the audio BuildToolBinding.SourceExtension. This mirrors gfx exactly, where
+/// FileExtension is ".bin" and the editable extension (".png") lives in the binding.
+///
+/// The asset region covers ONLY the BRR stream itself. Some games store each sample with a
+/// small length/header prefix immediately before the BRR stream; that prefix belongs to the
+/// surrounding region's assembly, not the asset, so the region must start after it. With the
+/// region covering just the stream, `length % 9 == 0` is the correct validation. Any
+/// `prefix == stream-length` integrity check belongs at region-authoring time, not here.
+/// </summary>
+public class BrrRegionAssetExporter : BinaryAssetExporterBase
+{
+    protected override string AssetTypePrefix => "audio.";
+
+    // the SEED + incbin-target extension (see class doc). NOT the editable extension.
+    protected override string FileExtension => ".bin";
+
+    // the editable payload's extension: what `binpack` compiles from. Recorded in the manifest
+    // so the vendored codec resolves it without the ninja rule having to pass --ext.
+    private const string EditableExtension = ".brr";
+
+    protected override void Validate(RegionAssetExportRequest request)
+    {
+        var length = request.Bytes.Length;
+
+        // BRR (SNES ADPCM) is a stream of 9-byte blocks (1 header + 8 data). Anything not a
+        // whole number of blocks is a mis-drawn region -- fail LOUDLY naming it, rather than
+        // shipping a truncated sample that the SPC would decode into garbage.
+        if (length == 0 || length % 9 != 0)
+            throw new InvalidOperationException(
+                $"Region '{request.Region.RegionName}' is {length} bytes, which is not a whole " +
+                "number of 9-byte BRR blocks (SNES ADPCM). Adjust the region so it covers " +
+                "complete BRR blocks. NOTE: the region must cover ONLY the BRR stream -- if the " +
+                "sample has a length/header prefix before the stream, that prefix stays in the " +
+                "parent region's assembly and must NOT be included here.");
+    }
+
+    protected override AssetManifestBlock BuildTypeBlock(RegionAssetExportRequest request) =>
+        new()
+        {
+            // the type string is authored verbatim into the manifest and is what the codec
+            // reads. Diz never decodes BRR itself.
+            TypeString = request.Region.AssetType,
+            BlockKey = "audio",
+
+            // matches what `binpack extract` writes for a verbatim asset: the block records only
+            // the editable extension. binpack reads `audio.ext` to find the .brr payload.
+            Block = new JsonObject { ["ext"] = EditableExtension },
+
+            // BRR has no option vocabulary Diz interprets; leave options off entirely (the base
+            // omits the key when null).
+            Options = null,
+        };
+}

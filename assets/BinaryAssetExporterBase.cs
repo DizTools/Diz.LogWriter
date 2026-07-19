@@ -20,7 +20,6 @@ namespace Diz.LogWriter.assets;
 /// every manifest-writing asset shares ExportType == Asset, so the enum alone cannot tell gfx
 /// from audio. Routing on the prefix mirrors what the codec tools already do internally with
 /// their `type` field, and it does not touch the save format the way a new enum value would.
-/// See regions-as-partition-plan.md §B.2.
 /// </summary>
 public abstract class BinaryAssetExporterBase : IRegionAssetExporter
 {

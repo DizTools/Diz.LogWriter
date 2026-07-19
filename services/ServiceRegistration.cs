@@ -18,6 +18,7 @@ public class LogWriterServiceRegistration : ICompositionRoot
         // plain binary, AssetType prefix for manifest-writing asset types), not on the name.
         serviceRegistry.Register<IRegionAssetExporter, BinaryRegionAssetExporter>("bin");
         serviceRegistry.Register<IRegionAssetExporter, GfxRegionAssetExporter>("gfx");
+        serviceRegistry.Register<IRegionAssetExporter, BrrRegionAssetExporter>("brr");
     }
 
     private static ISampleAssemblyTextGenerator CreateSampleAssemblyFromSettings(IServiceFactory factory,
