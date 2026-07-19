@@ -38,7 +38,7 @@ public class ToolVendoring
                   ?? AppContext.BaseDirectory;
 
         // walk up looking for tools/dizpack -- handles both an installed layout and running
-        // out of bin/Debug/net9.0-windows/ during development.
+        // out of bin/Debug/net10.0-windows/ during development.
         for (var i = 0; i < 8 && !string.IsNullOrEmpty(dir); ++i)
         {
             var candidate = Path.Combine(dir, "tools", "dizpack");
