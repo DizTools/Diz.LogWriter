@@ -21,7 +21,26 @@ public class ToolVendoring
     // forking Diz.
     public const string GameToolsDir = "tools/game";
 
-    private static readonly string[] ToolFiles = ["gfxpack.py", "requirements.txt"];
+    // Sentinel files that identify a real dizpack source dir during the walk-up. NOT the full
+    // vendoring list -- the set of codecs to ship is DISCOVERED (see DiscoverToolFiles) so a
+    // newly added codec (e.g. binpack.py) vendors automatically without editing this class.
+    private static readonly string[] RequiredToolFiles = ["gfxpack.py", "requirements.txt"];
+
+    // Extensions of files that get vendored out of the source dir. Everything the game repo
+    // needs to run the codecs with no Diz present: the Python scripts and their pip manifest.
+    private static readonly string[] VendorableExtensions = [".py", ".txt"];
+
+    /// <summary>
+    /// Every file in the source dir worth vendoring (top-level only; skips __pycache__ and other
+    /// subdirs). Sorted for a deterministic, clean-diff copy order.
+    /// </summary>
+    private static IEnumerable<string> DiscoverToolFiles(string sourceToolsDir) =>
+        !Directory.Exists(sourceToolsDir)
+            ? [] // missing source degrades to "vendor nothing", same as the old per-file existence check
+            : Directory.EnumerateFiles(sourceToolsDir)
+                .Where(f => VendorableExtensions.Contains(Path.GetExtension(f), StringComparer.OrdinalIgnoreCase))
+                .Select(Path.GetFileName)
+                .OrderBy(n => n, StringComparer.Ordinal);
 
     /// <summary>
     /// Find the dizpack source directory shipped alongside Diz. Returns null if not found,
@@ -43,7 +62,7 @@ public class ToolVendoring
         {
             var candidate = Path.Combine(dir, "tools", "dizpack");
             if (Directory.Exists(candidate) &&
-                ToolFiles.All(f => File.Exists(Path.Combine(candidate, f))))
+                RequiredToolFiles.All(f => File.Exists(Path.Combine(candidate, f))))
             {
                 return candidate;
             }
@@ -68,7 +87,7 @@ public class ToolVendoring
         Directory.CreateDirectory(destDir);
 
         var written = new List<string>();
-        foreach (var file in ToolFiles)
+        foreach (var file in DiscoverToolFiles(sourceToolsDir))
         {
             var src = Path.Combine(sourceToolsDir, file);
             if (!File.Exists(src))
