@@ -98,11 +98,10 @@ public class RegionAssetExportService : IRegionAssetExportService
     /// <summary>
     /// Read a region's bytes out of the ROM.
     ///
-    /// NOTE on bounds: EndSnesAddress is treated as EXCLUSIVE here, matching both
-    /// Data.GetRegion() and the existing region size math in AsmCreationInstructions.
-    /// (GetRegionAtOffset uses an inclusive compare -- that inconsistency predates this
-    /// code. Getting it wrong here would shift every byte after the region, so we follow
-    /// the size math, which is what actually determines the emitted output.)
+    /// NOTE on bounds: EndSnesAddress is treated as INCLUSIVE here (the last byte IN the
+    /// region), matching Data.GetRegion() and the region size math in AsmCreationInstructions.
+    /// Getting it wrong here would shift every byte after the region, so we follow the size
+    /// math, which is what actually determines the emitted output.
     /// </summary>
     private (int pcOffset, byte[] bytes) ReadRegionBytes(IRegion region)
     {
@@ -115,7 +114,7 @@ public class RegionAssetExportService : IRegionAssetExportService
                 $"(${region.StartSnesAddress:X6}..${region.EndSnesAddress:X6}). " +
                 "Asset export only works for regions backed by real ROM bytes.");
 
-        var length = endPc - startPc;
+        var length = endPc - startPc + 1;
         if (length <= 0)
             throw new InvalidOperationException(
                 $"Region '{region.RegionName}' has a non-positive length ({length} bytes). " +

@@ -119,7 +119,7 @@ public static class LogCreatorExtensions
         var srcRegions = srcSnesAddress == -1 ? [] : 
             data.Data.Regions
             .Where(x => srcSnesAddress >= x.StartSnesAddress && srcSnesAddress <= x.EndSnesAddress)
-            .OrderBy(x => x.Priority)
+            .OrderByDescending(x => x.Priority)
             .ToList();
         
         var min = step;
@@ -152,7 +152,7 @@ public static class LogCreatorExtensions
             var dstRegions = endSnesAddress == -1 ? [] : 
                 data.Data.Regions
                     .Where(x => endSnesAddress >= x.StartSnesAddress && endSnesAddress <= x.EndSnesAddress)
-                    .OrderBy(x => x.Priority)
+                    .OrderByDescending(x => x.Priority)
                     .ToList();
 
             // warning: compares by reference (good enough for now)

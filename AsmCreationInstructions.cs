@@ -242,7 +242,8 @@ public class AsmCreationInstructions : AsmCreationBase
             var endOffset = Data.ConvertSnesToPc(nextRegion.EndSnesAddress);
             if (startOffset != -1 && endOffset != -1 && GetBankFromOffset(startOffset) == GetBankFromOffset(endOffset)) {
                 // we'll only report the size if they're in the same bank, otherwise the math gets weird. maybe. unsure. whatever
-                regionBytesSize = endOffset - startOffset;   
+                // EndSnesAddress is inclusive (last byte IN the region), so add 1 to get the byte count
+                regionBytesSize = endOffset - startOffset + 1;
             }
         }
         LogCreator.WriteHeaderForNewlyIncludedFile(offset, "region", nextRegionName, regionBytesSize);
@@ -264,7 +265,7 @@ public class AsmCreationInstructions : AsmCreationBase
                 snesAddress <= x.EndSnesAddress && 
                 x.ExportSeparateFile
             )
-            .OrderBy(x => x.Priority)
+            .OrderByDescending(x => x.Priority)
             .ToList();
 
         var region = applicableOrderedRegions.FirstOrDefault(); // can be null
@@ -326,17 +327,17 @@ public class AsmCreationInstructions : AsmCreationBase
         var startPc = Data.ConvertSnesToPc(region.StartSnesAddress);
         var endPc = Data.ConvertSnesToPc(region.EndSnesAddress);
 
-        // EndSnesAddress is treated as EXCLUSIVE, matching Data.GetRegion() and the region
-        // size math above. If that's ever changed, this must change with it -- getting it
-        // wrong here shifts every byte after the region.
-        var length = endPc - startPc;
+        // EndSnesAddress is treated as INCLUSIVE (the last byte IN the region), matching
+        // Data.GetRegion() and the region size math above. If that's ever changed, this must
+        // change with it -- getting it wrong here shifts every byte after the region.
+        var length = endPc - startPc + 1;
         if (length <= 0)
             throw new InvalidDataException(
                 $"Asset region '{region.RegionName}' has a non-positive length ({length}).");
 
         // an asset region must sit inside one bank: the incbin lands in that bank's file,
         // and a region spanning banks would silently put bytes in the wrong place.
-        if (GetBankFromOffset(startPc) != GetBankFromOffset(endPc - 1))
+        if (GetBankFromOffset(startPc) != GetBankFromOffset(endPc))
             throw new InvalidDataException(
                 $"Asset region '{region.RegionName}' crosses a bank boundary, which isn't supported.");
 
