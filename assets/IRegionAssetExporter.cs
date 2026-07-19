@@ -14,8 +14,13 @@ namespace Diz.LogWriter.assets;
 /// </summary>
 public interface IRegionAssetExporter
 {
-    /// <summary>Which region export type this handles.</summary>
-    RegionExportType Handles { get; }
+    /// <summary>
+    /// Whether this exporter claims <paramref name="region"/>. Replaces the old single-enum
+    /// match: plain-binary keys on ExportType, but manifest-writing asset exporters (gfx, brr)
+    /// all share ExportType == Asset and disambiguate on the AssetType PREFIX instead. Exactly
+    /// one registered exporter must return true for any given asset region.
+    /// </summary>
+    bool CanExport(IRegion region);
 
     /// <summary>
     /// Write the asset files for <paramref name="region"/> into <paramref name="outputDir"/>.

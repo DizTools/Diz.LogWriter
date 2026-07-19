@@ -31,6 +31,58 @@ public class BuildFileGeneratorSettings
 }
 
 /// <summary>
+/// How to rebuild one family of asset (keyed by <see cref="AssetType"/> prefix) in the ninja
+/// graph: which codec tool runs it and what its two ninja rules are called. Replaces the
+/// hardcoded gfx-only wiring so a second asset type (e.g. "audio." / BRR) can be added by
+/// registering another binding rather than editing the generator body.
+///
+/// Dispatch mirrors <see cref="BinaryAssetExporterBase"/>: an asset is built by the binding
+/// whose <see cref="TypePrefix"/> its AssetType starts with.
+/// </summary>
+public sealed class BuildToolBinding
+{
+    /// <summary>AssetType prefix this binding claims, e.g. "gfx." or "audio.".</summary>
+    public string TypePrefix { get; init; }
+
+    /// <summary>
+    /// Ninja variable name of the codec script, referenced as $ToolVar in commands/deps.
+    /// The gfx binding reuses the shared "gfxpack" var (which also hosts romcheck), so it
+    /// declares no extra var line; a binding on its own tool declares one.
+    /// </summary>
+    public string ToolVar { get; init; }
+
+    /// <summary>Codec filename under the tools dir, e.g. "gfxpack.py". Null == reuse the shared tool var.</summary>
+    public string ToolFile { get; init; }
+
+    /// <summary>Extension of the editable source the codec compiles from, e.g. ".png" or ".brr".</summary>
+    public string SourceExtension { get; init; }
+
+    /// <summary>Extension of the compiled payload the assembler incbin's, e.g. ".bin".</summary>
+    public string CompiledExtension { get; init; } = ".bin";
+
+    /// <summary>Ninja rule name for the compile step, e.g. "gfx_compile".</summary>
+    public string CompileRule { get; init; }
+
+    /// <summary>Ninja rule name for the seed step, e.g. "gfx_seed".</summary>
+    public string SeedRule { get; init; }
+
+    /// <summary>Full `command =` line body for the compile rule (references $ToolVar).</summary>
+    public string CompileCommand { get; init; }
+
+    /// <summary>Full `description =` line body for the compile rule.</summary>
+    public string CompileDescription { get; init; }
+
+    /// <summary>Full `command =` line body for the seed rule.</summary>
+    public string SeedCommand { get; init; }
+
+    /// <summary>Full `description =` line body for the seed rule.</summary>
+    public string SeedDescription { get; init; }
+
+    public bool Handles(string assetType) =>
+        assetType?.StartsWith(TypePrefix, StringComparison.Ordinal) == true;
+}
+
+/// <summary>
 /// Emits a `build.ninja` that rebuilds the ROM from the exported assembly plus the editable
 /// assets, and verifies the result byte-for-byte against the original.
 ///
@@ -47,10 +99,77 @@ public class BuildFileGenerator
     /// <summary>The user-owned, game-specific half of the build. Seeded once, never overwritten.</summary>
     public const string ConfigFileName = "build-config.ninja";
 
-    private readonly BuildFileGeneratorSettings settings;
+    /// <summary>Ninja var name of the shared tool. Hosts romcheck (the oracle) and the gfx codec.</summary>
+    private const string SharedToolVar = "gfxpack";
 
-    public BuildFileGenerator(BuildFileGeneratorSettings settings = null) =>
+    /// <summary>Shared tool filename. Always vendored + declared, since romcheck (verify) needs it.</summary>
+    public const string SharedToolFile = "gfxpack.py";
+
+    /// <summary>Ninja var name of the generic verbatim codec (BRR audio, and later palette/tilemap).</summary>
+    private const string BinpackToolVar = "binpack";
+
+    /// <summary>The generic passthrough codec filename (vendored alongside gfxpack).</summary>
+    public const string BinpackToolFile = "binpack.py";
+
+    /// <summary>
+    /// The codec bindings, keyed by AssetType prefix. This is the one place a new asset type
+    /// gets added -- register a binding, and the per-asset build edges pick it up by prefix.
+    /// </summary>
+    public static readonly IReadOnlyList<BuildToolBinding> DefaultToolBindings = new[]
+    {
+        new BuildToolBinding
+        {
+            TypePrefix = "gfx.",
+            ToolVar = SharedToolVar,   // reuses the shared var; declares no extra `= ...` line
+            ToolFile = null,
+            SourceExtension = ".png",
+            CompiledExtension = ".bin",
+            CompileRule = "gfx_compile",
+            SeedRule = "gfx_seed",
+            CompileCommand = $"python ${SharedToolVar} compile --name $name $search_roots --out $out",
+            CompileDescription = "gfxpack compile $name",
+            SeedCommand = $"python ${SharedToolVar} seed --name $name $search_roots",
+            SeedDescription = "gfxpack seed $name",
+        },
+
+        // audio.* -> BRR (and later any other verbatim binary asset) via binpack. Runs off its
+        // OWN tool var (declares a `binpack = ...` line), unlike gfx which reuses the shared
+        // gfxpack var. The editable source is `.brr`; binpack resolves that extension from the
+        // manifest's `audio.ext` block (written by BrrRegionAssetExporter), so the commands pass
+        // NO --ext -- the manifest is the single source of truth (no `--ext` on the commands).
+        new BuildToolBinding
+        {
+            TypePrefix = "audio.",
+            ToolVar = BinpackToolVar,
+            ToolFile = BinpackToolFile,
+            SourceExtension = ".brr",
+            CompiledExtension = ".bin",
+            CompileRule = "audio_compile",
+            SeedRule = "audio_seed",
+            CompileCommand = $"python ${BinpackToolVar} compile --name $name $search_roots --out $out",
+            CompileDescription = "binpack compile $name",
+            SeedCommand = $"python ${BinpackToolVar} seed --name $name $search_roots",
+            SeedDescription = "binpack seed $name",
+        },
+    };
+
+    private readonly BuildFileGeneratorSettings settings;
+    private readonly IReadOnlyList<BuildToolBinding> toolBindings;
+
+    public BuildFileGenerator(
+        BuildFileGeneratorSettings settings = null,
+        IReadOnlyList<BuildToolBinding> toolBindings = null)
+    {
         this.settings = settings ?? new BuildFileGeneratorSettings();
+        this.toolBindings = toolBindings ?? DefaultToolBindings;
+    }
+
+    private BuildToolBinding BindingFor(string assetType) =>
+        toolBindings.FirstOrDefault(b => b.Handles(assetType))
+        ?? throw new InvalidOperationException(
+            $"No build tool is registered for asset type '{assetType}'. " +
+            $"Known prefixes: {string.Join(", ", toolBindings.Select(b => b.TypePrefix))}. " +
+            "Register a BuildToolBinding for it (see BuildFileGenerator.DefaultToolBindings).");
 
     /// <summary>
     /// Seed build-config.ninja with generic defaults, ONLY if the file doesn't already
@@ -102,7 +221,12 @@ public class BuildFileGenerator
         sb.AppendLine();
         sb.AppendLine($"include {ConfigFileName}");
         sb.AppendLine();
-        sb.AppendLine($"gfxpack = {s.ToolsDir}/gfxpack.py");
+        // The shared tool is always declared: romcheck (the `verify` oracle) lives in it,
+        // independent of which codec asset types the project uses.
+        sb.AppendLine($"{SharedToolVar} = {s.ToolsDir}/{SharedToolFile}");
+        // Any codec binding that runs off its OWN script (not the shared one) declares its var here.
+        foreach (var binding in toolBindings.Where(b => b.ToolVar != SharedToolVar && b.ToolFile != null))
+            sb.AppendLine($"{binding.ToolVar} = {s.ToolsDir}/{binding.ToolFile}");
         sb.AppendLine($"main_asm = {s.MainAsmPath}");
         sb.AppendLine();
         sb.AppendLine("# Asset layer search path, highest priority first. Mod layers come from");
@@ -112,14 +236,19 @@ public class BuildFileGenerator
 
         sb.AppendLine("# ---- rules ----------------------------------------------------------------");
         sb.AppendLine();
-        sb.AppendLine("rule gfx_compile");
-        sb.AppendLine("  command = python $gfxpack compile --name $name $search_roots --out $out");
-        sb.AppendLine("  description = gfxpack compile $name");
-        sb.AppendLine();
-        sb.AppendLine("rule gfx_seed");
-        sb.AppendLine("  command = python $gfxpack seed --name $name $search_roots");
-        sb.AppendLine("  description = gfxpack seed $name");
-        sb.AppendLine();
+        // One compile + one seed rule per registered codec binding. Emitted in registration order
+        // so output stays deterministic (build.ninja is checked in).
+        foreach (var binding in toolBindings)
+        {
+            sb.AppendLine($"rule {binding.CompileRule}");
+            sb.AppendLine($"  command = {binding.CompileCommand}");
+            sb.AppendLine($"  description = {binding.CompileDescription}");
+            sb.AppendLine();
+            sb.AppendLine($"rule {binding.SeedRule}");
+            sb.AppendLine($"  command = {binding.SeedCommand}");
+            sb.AppendLine($"  description = {binding.SeedDescription}");
+            sb.AppendLine();
+        }
         sb.AppendLine("rule assemble");
         sb.AppendLine("  command = $asar -v $main_asm $out");
         sb.AppendLine("  description = asar $out");
@@ -144,17 +273,19 @@ public class BuildFileGenerator
 
         foreach (var asset in assets)
         {
-            var outBin = $"{RegionAssetExportService.BuildAssetDir}/{asset.Name}.bin";
-            var srcPng = $"{RegionAssetExportService.BaseAssetLayer}/{asset.Name}.png";
+            var binding = BindingFor(asset.AssetType);
+            var outBin = $"{RegionAssetExportService.BuildAssetDir}/{asset.Name}{binding.CompiledExtension}";
+            var src = $"{RegionAssetExportService.BaseAssetLayer}/{asset.Name}{binding.SourceExtension}";
             var srcJson = $"{RegionAssetExportService.BaseAssetLayer}/{asset.Name}.json";
+            var toolRef = $"${binding.ToolVar}";
 
             sb.AppendLine($"# {asset.Name}  ({asset.AssetType})");
-            sb.AppendLine($"build {outBin}: gfx_compile {srcPng} | {srcJson} $gfxpack");
+            sb.AppendLine($"build {outBin}: {binding.CompileRule} {src} | {srcJson} {toolRef}");
             sb.AppendLine($"  name = {asset.Name}");
             sb.AppendLine();
 
             var seedTarget = $"seed-{asset.Name.Replace('/', '-')}";
-            sb.AppendLine($"build {seedTarget}: gfx_seed | $gfxpack");
+            sb.AppendLine($"build {seedTarget}: {binding.SeedRule} | {toolRef}");
             sb.AppendLine($"  name = {asset.Name}");
             sb.AppendLine();
 

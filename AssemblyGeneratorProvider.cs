@@ -18,6 +18,7 @@ public static class AssemblyGeneratorRegistration
             typeof(AssemblyGenerateOrg),
             typeof(AssemblyGenerateMap),
             typeof(AssemblyGenerateBankCross),
+            typeof(AssemblyGenerateBankCrossRestore),
             typeof(AssemblyGenerateIndirectAddress),
             typeof(AssemblyGenerateProgramCounter),
             typeof(AssemblyGenerateOffset),
