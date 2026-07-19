@@ -317,21 +317,23 @@ public class AsmCreationInstructions : AsmCreationBase
         for (var i = 0; i < popCount; i++)
             regionStack.Pop();
 
-        var pushedAny = false;
-        for (var i = commonDepth; i < desired.Count; i++)
+        if (popCount > 0 && EnableRegionIncSrc)
         {
-            pushedAny = true;
-            if (EnterRegion(desired[i], offset, snesAddress))
-                pushedRoot = true;
-        }
-
-        if (popCount > 0 && !pushedAny && EnableRegionIncSrc)
-        {
-            // we left one or more regions and nothing new opened here -- resume writing into
-            // whichever file is now on top of the stack (or main.asm if we're back at the root)
+            // we left one or more regions -- resume writing into whichever file is now on top
+            // of the stack (or main.asm if we're back at the root) BEFORE any new region opens
+            // here. When a sibling region starts on the byte right after the previous one ends
+            // (pop+push in the same call), this is what makes the new sibling's incsrc land in
+            // the shared parent's file per plan §A.3 ("into its parent's file"), not in the
+            // just-closed sibling's file.
             LogCreator.SwitchOutputStream(regionStack.Count > 0
                 ? LogCreator.GetRegionStreamName(regionStack.Peek())
                 : LogCreatorStreamOutput.MainStreamFilename);
+        }
+
+        for (var i = commonDepth; i < desired.Count; i++)
+        {
+            if (EnterRegion(desired[i], offset, snesAddress))
+                pushedRoot = true;
         }
     }
 
