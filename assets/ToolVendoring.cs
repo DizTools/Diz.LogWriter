@@ -30,7 +30,12 @@ public class ToolVendoring
     /// </summary>
     public static string FindSourceToolsDir(string searchStartDir = null)
     {
-        var dir = searchStartDir ?? AppContext.BaseDirectory;
+        // anchor on this assembly's location, not AppContext.BaseDirectory: when Diz is
+        // loaded as a plugin (e.g. the PowerShell module), BaseDirectory is the HOST's
+        // install dir and the walk-up would never find our tools.
+        var dir = searchStartDir
+                  ?? Path.GetDirectoryName(typeof(ToolVendoring).Assembly.Location)
+                  ?? AppContext.BaseDirectory;
 
         // walk up looking for tools/dizpack -- handles both an installed layout and running
         // out of bin/Debug/net9.0-windows/ during development.
