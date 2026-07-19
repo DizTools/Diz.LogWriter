@@ -195,65 +195,26 @@ public class AsmCreationInstructions : AsmCreationBase
     /// Synthesize one whole-bank, file-producing region per SNES bank spanned by the ROM,
     /// reproducing today's one-file-per-bank split (§A.2.3: "banks are not special;
     /// ExportSeparateFile is the only discriminator"). Purely in-memory/transient here --
-    /// nothing is written back to Data.Regions. (Persisting these on import/migration is
-    /// §A.5, a later step.)
+    /// nothing is written back to Data.Regions here.
     ///
-    /// Mapping-mode-agnostic: steps PC by Data.GetBankSize() (0x8000 for LoRom, 0x10000
-    /// otherwise) and derives the bank purely from the SNES address at each step, so it's
-    /// correct whether or not PC and SNES bank numbering stay in lockstep.
+    /// §A.5/step 5 persists these same regions on import and via the save-format-107
+    /// migration. The actual bank-enumeration + skip-if-already-covered logic lives in the
+    /// shared <see cref="BankRegionSynthesis"/> helper (Diz.Core) so this call site and the
+    /// persistence call sites can never disagree about which banks need a region -- a
+    /// project that has been migrated/imported already has exact-match persisted bank
+    /// regions in allRegions, so this pass sees them via existingRegions and skips them:
+    /// nothing is added twice, and re-running export is idempotent. See the "As built -- two
+    /// deviations to reconcile" note at the end of §A.4.
     /// </summary>
     private void GenerateSyntheticBankRegions()
     {
         var bankSize = Data.GetBankSize();
-        if (bankSize <= 0)
-            return;
-
         var romSize = LogCreator.GetRomSize();
-        var existingFileProducing = allRegions.Where(r => r.IsFileProducingRegion()).ToList();
-        var seenBanks = new HashSet<int>();
 
-        for (var offset = 0; offset < romSize; offset += bankSize)
-        {
-            var snesAddress = Data.ConvertPCtoSnes(offset);
-            if (snesAddress == -1)
-                continue;
+        var synthesized = BankRegionSynthesis.SynthesizeMissingBankRegions(
+            allRegions, romSize, bankSize, Data.ConvertPCtoSnes);
 
-            var bank = RomUtil.GetBankFromSnesAddress(snesAddress);
-            if (!seenBanks.Add(bank))
-                continue;
-
-            var bankStart = bank << 16;
-            var bankEnd = bankStart | 0xFFFF;
-
-            // An existing region that EXACTLY matches this bank already covers it (nothing to
-            // add). One that CROSSES the bank boundary (overlaps but is neither an exact match
-            // nor fully nested inside) means the user/migration is expected to have already
-            // tiled this bank's remaining bytes by hand (plan doc §B.5) -- auto-synthesis must
-            // not add a region that would partially cross it.
-            var skip = existingFileProducing.Any(r =>
-            {
-                var overlaps = r.StartSnesAddress <= bankEnd && r.EndSnesAddress >= bankStart;
-                if (!overlaps)
-                    return false;
-
-                var exactMatch = r.StartSnesAddress == bankStart && r.EndSnesAddress == bankEnd;
-                var nestedWithinBank = r.StartSnesAddress >= bankStart && r.EndSnesAddress <= bankEnd;
-                return exactMatch || !nestedWithinBank;
-            });
-
-            if (skip)
-                continue;
-
-            allRegions.Add(new Region
-            {
-                RegionName = $"bank_{Util.NumberToBaseString(bank, Util.NumberBase.Hexadecimal, 2)}",
-                StartSnesAddress = bankStart,
-                EndSnesAddress = bankEnd,
-                ExportSeparateFile = true,
-                Priority = 0,
-                ExportType = RegionExportType.Assembly,
-            });
-        }
+        allRegions.AddRange(synthesized);
     }
 
     /// <summary>
