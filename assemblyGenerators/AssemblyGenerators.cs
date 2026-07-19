@@ -141,7 +141,7 @@ public class AssemblyGenerateOrg : AssemblyPartialLineGenerator
         var snesAddress = snesContext.SnesAddress;
         
         var org =
-            $"ORG {Util.NumberToBaseString(snesAddress, Util.NumberBase.Hexadecimal, 6, true)}";
+            $"ORG {Util.NumberToBaseString((uint)snesAddress, Util.NumberBase.Hexadecimal, 6, true)}";
         return GenerateFromStr(Util.LeftAlign(length, org));
     }
 }
@@ -216,7 +216,7 @@ public class AssemblyGenerateIndirectAddress : AssemblyPartialLineGenerator
     protected override TokenBase[] Generate(int offset, int length, LineGenerator.TokenExtraContext context = null)
     {
         var ia = Data.GetIntermediateAddressOrPointer(offset);
-        return GenerateFromStr(ia >= 0 ? Util.ToHexString6(ia) : "      ");
+        return GenerateFromStr(ia is >= 0 ? Util.ToHexString6((int)ia.Value) : "      ");
     }
 }
     
@@ -242,7 +242,7 @@ public class AssemblyGenerateOffset : AssemblyPartialLineGenerator
     }
     protected override TokenBase[] Generate(int offset, int length, LineGenerator.TokenExtraContext context = null)
     {
-        var hexStr = Util.NumberToBaseString(offset, Util.NumberBase.Hexadecimal, 0);
+        var hexStr = Util.NumberToBaseString((uint)offset, Util.NumberBase.Hexadecimal, 6);
         return GenerateFromStr(Util.LeftAlign(length, hexStr));
     }
 }
@@ -311,7 +311,7 @@ public class AssemblyGenerateDataBank : AssemblyPartialLineGenerator
     }
     protected override TokenBase[] Generate(int offset, int length, LineGenerator.TokenExtraContext context = null)
     {
-        return GenerateFromStr(Util.NumberToBaseString(SnesApi.GetDataBank(offset), Util.NumberBase.Hexadecimal, 2));
+        return GenerateFromStr(Util.NumberToBaseString((uint)SnesApi.GetDataBank(offset), Util.NumberBase.Hexadecimal, 2));
     }
 }
     
@@ -324,7 +324,7 @@ public class AssemblyGenerateDirectPage : AssemblyPartialLineGenerator
     }
     protected override TokenBase[] Generate(int offset, int length, LineGenerator.TokenExtraContext context = null)
     {
-        return GenerateFromStr(Util.NumberToBaseString(SnesApi.GetDirectPage(offset), Util.NumberBase.Hexadecimal, 4));
+        return GenerateFromStr(Util.NumberToBaseString((uint)SnesApi.GetDirectPage(offset), Util.NumberBase.Hexadecimal, 4));
     }
 }
     
@@ -373,7 +373,7 @@ public class AssemblyGenerateLabelAssign : AssemblyPartialLineGenerator
     public record PrintableLabelDataAtOffset(int SnesAddress, string Name, string Comment)
     {
         public string GetSnesAddressFormatted() => 
-            Util.NumberToBaseString(SnesAddress, Util.NumberBase.Hexadecimal, 6, true);
+            Util.NumberToBaseString((uint)SnesAddress, Util.NumberBase.Hexadecimal, 6, true);
     }
         
     public static List<PrintableLabelDataAtOffset> GetPrintableLabelsDataAtSnesAddress(int snesAddress, IReadOnlyLabelProvider labelProvider) 

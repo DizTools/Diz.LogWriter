@@ -16,9 +16,9 @@ public class LogCreatorByteSource : ILogCreatorDataSource<IData>
 
     protected ISnesData SnesApi => Data.GetSnesApi();
     public byte? GetRomByte(int offset) => Data.GetRomByte(offset);
-    public int? GetRomWord(int offset) => Data.GetRomWord(offset);
-    public int? GetRomLong(int offset) => Data.GetRomLong(offset);
-    public int? GetRomDoubleWord(int offset) => Data.GetRomDoubleWord(offset);
+    public uint? GetRomWord(int offset) => Data.GetRomWord(offset);
+    public uint? GetRomLong(int offset) => Data.GetRomLong(offset);
+    public uint? GetRomDoubleWord(int offset) => Data.GetRomDoubleWord(offset);
     public RomMapMode RomMapMode
     {
         get => Data.RomMapMode;
@@ -40,7 +40,7 @@ public class LogCreatorByteSource : ILogCreatorDataSource<IData>
     public CpuInstructionDataFormatted GetInstructionData(int offset) => SnesApi.GetInstructionData(offset);
     public int ConvertPCtoSnes(int offset) => SnesApi.ConvertPCtoSnes(offset);
     public int ConvertSnesToPc(int offset) => SnesApi.ConvertSnesToPc(offset);
-    public int GetIntermediateAddressOrPointer(int offset) => SnesApi.GetIntermediateAddressOrPointer(offset);
+    public uint? GetIntermediateAddressOrPointer(int offset) => SnesApi.GetIntermediateAddressOrPointer(offset);
     public int GetIntermediateAddress(int offset, bool resolve = false) => SnesApi.GetIntermediateAddress(offset, resolve);
     public bool IsMatchingIntermediateAddress(int intermediateAddress, int addressToMatch) => SnesApi.IsMatchingIntermediateAddress(intermediateAddress, addressToMatch);
 

@@ -370,7 +370,7 @@ public class LogCreator : ILogCreatorForGenerator
     
     public static string GetBankStreamName(int bank)
     {
-        var bankStr = Util.NumberToBaseString(bank, Util.NumberBase.Hexadecimal, 2);
+        var bankStr = Util.NumberToBaseString((uint)bank, Util.NumberBase.Hexadecimal, 2);
         var bankStreamName = $"bank_{bankStr}.asm";
         return bankStreamName;
     }
@@ -378,8 +378,8 @@ public class LogCreator : ILogCreatorForGenerator
     public void WriteHeaderForNewlyIncludedFile(int offset, string nameType, string name, int sizeInBytes = -1)
     {
         var snesAddress = Data.ConvertPCtoSnes(offset);
-        var formattedOffsetStr = RomUtil.ConvertNumToHexStr(offset, 3);
-        var formattedSnesAddrStr = snesAddress == -1 ? "[invalid]" : RomUtil.ConvertNumToHexStr(snesAddress, 3);
+        var formattedOffsetStr = RomUtil.ConvertNumToHexStr((uint)offset, 3);
+        var formattedSnesAddrStr = snesAddress == -1 ? "[invalid]" : RomUtil.ConvertNumToHexStr((uint)snesAddress, 3);
         WriteLine($"; --> Included {nameType}: {name}");
         WriteLine($"; --> Included from offset:       {formattedOffsetStr}");
         WriteLine($"; --> Included from SNES address: {formattedSnesAddrStr}");

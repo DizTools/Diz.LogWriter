@@ -210,13 +210,17 @@ public static class LogCreatorExtensions
         }
     }
 
-    public static string GeneratePointerStr(this ISnesApi<IData> data, int offset, int bytes)
+    public static string GeneratePointerStr(this ISnesApi<IData> data, int offset, int numBytes)
     {
-        var ia = -1;
-        string format = "", param = "";
-        switch (bytes)
+        uint ia, pointerAddr;
+        int numDigits;
+        string directive;
+
+        var noLabel = false;
+        switch (numBytes)
         {
-            case 2:
+            default: // case 2
+                
                 // here's a tricky Diz-specific thing.
                 // at this address, we only have the two bytes of the IA to work with (since this is a 16-bit pointer).
                 // we need to come up with a bank# to use for this.
@@ -232,36 +236,65 @@ public static class LogCreatorExtensions
 
                 // Use the autodetected bank# unless the user excplicitly typed in a non-zero value.
                 var bankToUse = bankFromUser != 0 ? bankFromUser : autoDetectedBank;
-                    
-                ia = (bankToUse << 16) | data.GetRomWordUnsafe(offset);
-                    
-                format = "dw {0}";
-                param = Util.NumberToBaseString(data.GetRomWordUnsafe(offset), Util.NumberBase.Hexadecimal, 4, true);
-                break;
-            case 3:
-                ia = data.GetRomLongUnsafe(offset);
-                format = "dl {0}";
-                param = Util.NumberToBaseString(data.GetRomLongUnsafe(offset), Util.NumberBase.Hexadecimal, 6, true);
-                break;
-            case 4:
-                ia = data.GetRomLongUnsafe(offset);
-                format = "dl {0}" +
-                         $" : db {Util.NumberToBaseString(data.GetRomByteUnsafe(offset + 3), Util.NumberBase.Hexadecimal, 2, true)}";
-                param = Util.NumberToBaseString(data.GetRomLongUnsafe(offset), Util.NumberBase.Hexadecimal, 6, true);
-                break;
-        }
 
-        if (data.ConvertSnesToPc(ia) < 0) 
-            return string.Format(format, param);
+                pointerAddr = data.GetRomWord(offset) ?? 0;
+                ia = (uint)(bankToUse << 16) | pointerAddr;
+                    
+                directive = "dw";
+                numDigits = 4;
+                break;
             
-        var labelName = data.Labels.GetLabelName(ia);
+            case 3:
+                pointerAddr = ia = data.GetRomLong(offset) ?? 0;
                 
-        // check: filter +/- labels here, like "+", "-", "++", "--", etc
-        if (labelName != "" && !RomUtil.IsValidPlusMinusLabel(labelName)) {
-            param = labelName;
+                directive = "dl";
+                numDigits = 6;
+                break;
+            
+            case 4:
+                pointerAddr = ia = data.GetRomDoubleWord(offset) ?? 0;
+                
+                directive = "dd";
+                numDigits = 8;
+                
+                noLabel = true;
+                break;
         }
 
-        return string.Format(format, param);
+        var iaLabel = noLabel ? "" : data.GetLabelForPointedAddress(offset, ia);
+        string target;
+
+        if (iaLabel == "") {
+            target = Util.NumberToBaseString(pointerAddr, Util.NumberBase.Hexadecimal, numDigits, true);
+        } else {
+            target = iaLabel;
+        }
+
+        return $"{directive} {target}";
+    }
+
+    public static string GetLabelForPointedAddress(this ISnesApi<IData> data, int offset, uint ia)
+    {
+        // if the pointer isn't a ROM address, don't use it
+        if (data.ConvertSnesToPc((int)ia) == -1) 
+            return "";
+        
+        // if there's not a label, we don't care
+        var labelName = data.Labels.GetLabelName((int)ia);
+        if (labelName == "") 
+            return "";
+        
+        // if there IS a label, are we allowed to use it? (it could be disabled)
+        var specialDirective = data.GetSpecialDirectiveOverrideFromComments(offset);
+        if (specialDirective is { ForceOnlyShowRawHex: true }) 
+            return "";
+        
+        // finally..
+        // check: don't allow +/- labels here (like "+", "-", "++", "--", etc)
+        // if this is a valid +/- label, don't use it. 
+        return RomUtil.IsValidPlusMinusLabel(labelName) 
+            ? "" 
+            : labelName;
     }
         
     public static string GetFormattedBytes(this IReadOnlyByteSource data, int offset, int step, int bytes)
@@ -282,20 +315,16 @@ public static class LogCreatorExtensions
             switch (step)
             {
                 case 1:
-                    res += Util.NumberToBaseString(data.GetRomByteUnsafe(offset + i), Util.NumberBase.Hexadecimal, 2,
-                        true);
+                    res += Util.NumberToBaseString(data.GetRomByteUnsafe(offset + i), Util.NumberBase.Hexadecimal, 2, true);
                     break;
                 case 2:
-                    res += Util.NumberToBaseString(data.GetRomWordUnsafe(offset + i), Util.NumberBase.Hexadecimal, 4,
-                        true);
+                    res += Util.NumberToBaseString(data.GetRomWord(offset + i) ?? 0, Util.NumberBase.Hexadecimal, 4, true);
                     break;
                 case 3:
-                    res += Util.NumberToBaseString(data.GetRomLongUnsafe(offset + i), Util.NumberBase.Hexadecimal, 6,
-                        true);
+                    res += Util.NumberToBaseString(data.GetRomLong(offset + i) ?? 0, Util.NumberBase.Hexadecimal, 6, true);
                     break;
                 case 4:
-                    res += Util.NumberToBaseString(data.GetRomDoubleWordUnsafe(offset + i), Util.NumberBase.Hexadecimal,
-                        8, true);
+                    res += Util.NumberToBaseString(data.GetRomDoubleWord(offset + i) ?? 0, Util.NumberBase.Hexadecimal, 8, true);
                     break;
             }
         }
