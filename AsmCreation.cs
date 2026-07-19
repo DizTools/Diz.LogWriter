@@ -56,7 +56,7 @@ public class AsmCreationMainBankIncludes : AsmCreationBase
         LogCreator.SwitchOutputStream(LogCreatorStreamOutput.MainStreamFilename);
         
         LogCreator.WriteIncludeFileDirective("defines.asm");
-        LogCreator.UniqueVisitedBanks.ForEach(LogCreator.WriteIncSrcLineForBank);
+        LogCreator.RootRegions.ForEach(LogCreator.WriteIncSrcLineForRegion);
         LogCreator.WriteIncludeFileDirective("labels.asm");
     }
 }

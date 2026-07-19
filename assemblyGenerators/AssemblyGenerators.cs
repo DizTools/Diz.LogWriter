@@ -177,10 +177,30 @@ public class AssemblyGenerateBankCross : AssemblyPartialLineGenerator
     {
         Token = "%bankcross";
         DefaultLength = 1;
+        UsesOffset = false;   // a standalone directive line; emitted with no ROM offset (-1)
     }
     protected override TokenBase[] Generate(int length, LineGenerator.TokenExtraContext context = null)
     {
         return GenerateFromStr(Util.LeftAlign(length, "check bankcross off"));
+    }
+}
+
+// Restores asar's default bank-border checking after a region that legitimately crosses a
+// bank boundary (HiROM data is linear across C0-FF, but asar flags any ORG block that crosses
+// a bank with E5032). Emitted at the END of such a region's file so the suppression is SCOPED
+// -- the rest of the export keeps the check. asar 1.x accepts `check bankcross on/off` only;
+// the 2.x `full`/`half` values raise E5153, so the restore is `on`, verified empirically.
+public class AssemblyGenerateBankCrossRestore : AssemblyPartialLineGenerator
+{
+    public AssemblyGenerateBankCrossRestore()
+    {
+        Token = "%bankcrosson";
+        DefaultLength = 1;
+        UsesOffset = false;   // a standalone directive line; emitted with no ROM offset (-1)
+    }
+    protected override TokenBase[] Generate(int length, LineGenerator.TokenExtraContext context = null)
+    {
+        return GenerateFromStr(Util.LeftAlign(length, "check bankcross on"));
     }
 }
 

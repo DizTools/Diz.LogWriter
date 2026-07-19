@@ -27,8 +27,10 @@ public class LogCreator : ILogCreatorForGenerator
     // ideally, we wouldn't have any side effects
     private Dictionary<string, string> visitedDefines = new();
     
-    // unique list of banks we've visited when exporting instructions
-    public List<int> UniqueVisitedBanks { get; }= [];
+    // root (parentless) file-producing regions, ordered by StartSnesAddress ascending -- these
+    // get an `incsrc` in main.asm. Populated by AsmCreationInstructions from the laminar tree;
+    // replaces the old bank-number list.
+    public List<IRegion> RootRegions { get; } = [];
 
     public class ProgressEvent
     {
@@ -171,7 +173,7 @@ public class LogCreator : ILogCreatorForGenerator
         LineGenerator = new LineGenerator(this, Settings.Format);
         LabelTracker = new LabelTracker(this);
         visitedDefines = new Dictionary<string, string>();
-        UniqueVisitedBanks.Clear();
+        RootRegions.Clear();
             
         if (Settings.Unlabeled != LogWriterSettings.FormatUnlabeled.ShowNone)
         {
@@ -244,7 +246,7 @@ public class LogCreator : ILogCreatorForGenerator
             ? new RegionAssetExportService(
                 Data,                       // ILogCreatorDataSource is an IReadOnlyByteSource
                 Data,                       //   ...and an ISnesAddressConverter
-                [new BinaryRegionAssetExporter(), new GfxRegionAssetExporter()])
+                [new BinaryRegionAssetExporter(), new GfxRegionAssetExporter(), new BrrRegionAssetExporter()])
             : null;
 
         Steps =
@@ -408,6 +410,14 @@ public class LogCreator : ILogCreatorForGenerator
         WriteEmptyLine();
     }
 
+    // Suppress / restore asar's bank-border check (E5032) around a file-producing region whose
+    // extent legitimately crosses a SNES bank boundary. HiROM is linear across banks C0-FF, so
+    // the crossing is correct, but asar flags any ORG block that crosses a bank. Emitted scoped
+    // (top + end of that one file) by AsmCreationInstructions so the check still guards the rest
+    // of the export.
+    public void WriteBankCrossCheckDisable() => WriteSpecialLine("bankcross");
+    public void WriteBankCrossCheckRestore() => WriteSpecialLine("bankcrosson");
+
     protected internal void SwitchOutputStream(string streamName)
     {
         Output.SwitchToStream(streamName);
@@ -415,9 +425,6 @@ public class LogCreator : ILogCreatorForGenerator
         if (Settings.Structure == LogWriterSettings.FormatStructure.SingleFile) 
             WriteEmptyLine();
     }
-    
-    public void SwitchOutputStreamForBank(int bank) => 
-        SwitchOutputStream(GetBankStreamName(bank));
     
     public void WriteIncludeFileDirective(string filename, bool padWithBlankLine = false)
     {
@@ -429,15 +436,13 @@ public class LogCreator : ILogCreatorForGenerator
         if (padWithBlankLine) WriteEmptyLine();
     }
 
-    public void WriteIncSrcLineForBank(int bank) => 
-        WriteIncludeFileDirective(GetBankStreamName(bank));
-    
-    public static string GetBankStreamName(int bank)
-    {
-        var bankStr = Util.NumberToBaseString(bank, Util.NumberBase.Hexadecimal, 2);
-        var bankStreamName = $"bank_{bankStr}.asm";
-        return bankStreamName;
-    }
+    public void WriteIncSrcLineForRegion(IRegion region) =>
+        WriteIncludeFileDirective(GetRegionStreamName(region));
+
+    // filename a file-producing region's own .asm gets written to/included as. Auto-created
+    // bank regions are named "bank_C0" etc (see AsmCreationInstructions.GenerateSyntheticBankRegions),
+    // so this reproduces today's "bank_C0.asm" naming exactly.
+    public static string GetRegionStreamName(IRegion region) => $"{region.RegionName}.asm";
     
     public void WriteHeaderForNewlyIncludedFile(int offset, string nameType, string name, int sizeInBytes = -1)
     {
@@ -469,9 +474,9 @@ public class LogCreator : ILogCreatorForGenerator
         RememberInstructionIfOverridden(offset, cpuInstructionDataFormatted);
     }
 
-    public void ReportVisitedBanks(List<int> bankManagerVisitedBanks) { 
-        UniqueVisitedBanks.Clear();
-        UniqueVisitedBanks.AddRange(bankManagerVisitedBanks);
+    public void ReportRootRegions(List<IRegion> rootRegions) {
+        RootRegions.Clear();
+        RootRegions.AddRange(rootRegions);
     }
     
     private void RememberInstructionIfOverridden(int offset, CpuInstructionDataFormatted instruction)
