@@ -1,4 +1,5 @@
-﻿using System.Linq;
+﻿using System.IO;
+using System.Linq;
 using System.Text;
 using Diz.Core.Interfaces;
 using Diz.Core.model;
@@ -10,7 +11,7 @@ namespace Diz.LogWriter;
 
 public static class LogCreatorExtensions
 {
-    public static string CreateAssemblyFormattedTextLine(this ILogCreatorDataSource<IData> data, int offset, int count)
+    public static string CreateAssemblyFormattedTextLine(this ILogCreatorDataSource<IData> data, int offset, int count, LogCreator.AssemblerFlavor flavor)
     {
         var rawStr = new StringBuilder();
         for (var i = 0; i < count; i++)
@@ -18,17 +19,22 @@ public static class LogCreatorExtensions
             rawStr.Append((char)(data.GetRomByte(offset + i) ?? 0));
         }
 
-        return CreateAssemblyFormattedTextLine(rawStr.ToString());
+        return CreateAssemblyFormattedTextLine(rawStr.ToString(), flavor);
     }
         
-    public static string CreateAssemblyFormattedTextLine(string rawStr)
+    public static string CreateAssemblyFormattedTextLine(string rawStr, LogCreator.AssemblerFlavor flavor)
     {
         // important: Asar will not accept null characters printed inside quoted text. so we need to break up text lines.
         // also, asar seems to have issues with exclamation points in text
         bool IsPrintableAsciiCharacter(char c) => 
             c >= 32 && c <= 127 && c != '"' && c != '!';
-
-        var outputStr = new StringBuilder("db ");
+        
+        var directive = flavor switch
+        {
+            LogCreator.AssemblerFlavor.AssemblerCa65 => ".byte",
+            _ => "db"
+        };
+        var outputStr = new StringBuilder(directive).Append(' ');
         var inQuotedSection = false;
 
         bool StartQuotedSectionIfNeeded(bool printedSomethingBeforeThis)
@@ -106,6 +112,7 @@ public static class LogCreatorExtensions
     {
         var snesApi = data.Data.GetSnesApi();
         var flagType = snesApi.GetFlag(offset);
+        var readPoint = data.IsLocationAReadPoint(offset);
 
         if (flagType == FlagType.Opcode)
             return data.GetInstructionLength(offset);
@@ -132,6 +139,9 @@ public static class LogCreatorExtensions
                 break;
 
             if (snesApi.GetFlag(offset + min) != flagType)
+                break;
+
+            if (data.IsLocationAReadPoint(offset + min) != readPoint)
                 break;
 
             var endSnesAddress = data.ConvertPCtoSnes(offset + min);
@@ -210,8 +220,10 @@ public static class LogCreatorExtensions
         }
     }
 
-    public static string GeneratePointerStr(this ISnesApi<IData> data, int offset, int numBytes)
+    public static string GeneratePointerStr(this ISnesApi<IData> data, int offset, int numBytes, LogCreator.AssemblerFlavor assemblerFlavor)
     {
+        // NOTE: update Cpu65816::GetPointerStr() with any changes here (maybe can merge at some point)
+        
         uint ia, pointerAddr;
         int numDigits;
         string directive;
@@ -240,21 +252,21 @@ public static class LogCreatorExtensions
                 pointerAddr = data.GetRomWord(offset) ?? 0;
                 ia = (uint)(bankToUse << 16) | pointerAddr;
                     
-                directive = "dw";
+                directive = assemblerFlavor == LogCreator.AssemblerFlavor.AssemblerCa65 ? ".addr" : "dw";
                 numDigits = 4;
                 break;
             
             case 3:
                 pointerAddr = ia = data.GetRomLong(offset) ?? 0;
                 
-                directive = "dl";
+                directive = assemblerFlavor == LogCreator.AssemblerFlavor.AssemblerCa65 ? ".faraddr" : "dl";
                 numDigits = 6;
                 break;
             
             case 4:
                 pointerAddr = ia = data.GetRomDoubleWord(offset) ?? 0;
                 
-                directive = "dd";
+                directive = assemblerFlavor == LogCreator.AssemblerFlavor.AssemblerCa65 ? ".dword" : "dd";
                 numDigits = 8;
                 
                 noLabel = true;
@@ -265,9 +277,21 @@ public static class LogCreatorExtensions
         string target;
 
         if (iaLabel == "") {
+            // numerical output
             target = Util.NumberToBaseString(pointerAddr, Util.NumberBase.Hexadecimal, numDigits, true);
         } else {
+            // label output
             target = iaLabel;
+            
+            // NES: we have to clip to the correct# bytes or it'll be out of range. (asar on SNES magically handles this for us)
+            if (assemblerFlavor == LogCreator.AssemblerFlavor.AssemblerCa65) {
+                target = numBytes switch
+                {
+                    2 => RomUtil.NesHackMmc1BankRelativeAddr((int)ia, iaLabel),
+                    3 => $"({iaLabel} & $FFFFFF)",
+                    _ => iaLabel
+                };
+            }
         }
 
         return $"{directive} {target}";
@@ -297,16 +321,9 @@ public static class LogCreatorExtensions
             : labelName;
     }
         
-    public static string GetFormattedBytes(this IReadOnlyByteSource data, int offset, int step, int bytes)
+    public static string GetFormattedBytes(this IReadOnlyByteSource data, int offset, int step, int bytes, LogCreator.AssemblerFlavor assemblerFlavor)
     {
-        var res = step switch
-        {
-            1 => "db ",
-            2 => "dw ",
-            3 => "dl ",
-            4 => "dd ",
-            _ => ""
-        };
+        var res = $"{GetDataDirectiveKeyword(step, assemblerFlavor)} ";
 
         for (var i = 0; i < bytes; i += step)
         {
@@ -330,5 +347,29 @@ public static class LogCreatorExtensions
         }
 
         return res;
+    }
+
+    private static string GetDataDirectiveKeyword(int step, LogCreator.AssemblerFlavor flavor)
+    {
+        return flavor switch
+        {
+            LogCreator.AssemblerFlavor.AssemblerCa65 => step switch
+            {
+                1 => ".byte",
+                2 => ".word",
+                3 => ".faraddr",
+                4 => ".dword",
+                _ => throw new InvalidDataException("Invalid step size: " + step)
+            },
+            LogCreator.AssemblerFlavor.AssemblerAsar => step switch
+            {
+                1 => "db",
+                2 => "dw",
+                3 => "dl",
+                4 => "dd",
+                _ => throw new InvalidDataException("Invalid step size: " + step)
+            },
+            _ => throw new InvalidDataException("Invalid assembler flavor: " + flavor)
+        };
     }
 }

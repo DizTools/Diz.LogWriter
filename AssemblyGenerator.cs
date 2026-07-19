@@ -12,6 +12,11 @@ public interface ILogCreatorForGenerator
 { 
     public LogWriterSettings Settings { get; }
     ILogCreatorDataSource<IData> Data { get; }
+    
+    LogCreator.AssemblerFlavor AssemblerToolFlavor => 
+        Settings.NesMode 
+            ? LogCreator.AssemblerFlavor.AssemblerCa65   // NES: Experimental 
+            : LogCreator.AssemblerFlavor.AssemblerAsar;  // SNES
 
     int GetLineByteLength(int offset);
     

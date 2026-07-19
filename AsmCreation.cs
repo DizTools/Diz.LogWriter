@@ -41,11 +41,22 @@ public class AsmDefinesGenerator : AsmCreationBase
         LogCreator.WriteLine("; auto-generated file DON'T edit");
 
         var sortedDefines = Defines
-            .OrderBy (x => x.Key);
+            .OrderBy(x => x.Key)
+            
+            // all defines start with "!" in this list
+            // but we don't want to output "!" for every assembler. normalize all define names to NOT have "!" at the start
+            .Select(x => (x.Key[1..], x.Value));
         
         foreach (var (defineName, value) in sortedDefines) {
-            LogCreator.WriteLine($"{defineName} = {Util.ChopExtraZeroesFromHexStr(value)}");
+            LogCreator.WriteLine($"{GenerateDefineLabelText(defineName)} = {Util.ChopExtraZeroesFromHexStr(value)}");
         }
+    }
+
+    private string GenerateDefineLabelText(string defineName)
+    {
+        // asar needs prefix with "!", ca65 doesn't
+        var prefix = LogCreator.AssemblerToolFlavor != LogCreator.AssemblerFlavor.AssemblerCa65 ? "!" : "";
+        return $"{prefix}{defineName}";
     }
 }
 
@@ -66,7 +77,11 @@ public class AsmCreationRomMap : AsmCreationBase
     protected override void Execute()
     {
         LogCreator.SwitchOutputStream(LogCreatorStreamOutput.MainStreamFilename);
+
+        if (LogCreator.Settings.NesMode) 
+            return; // skip for NES mode
         
+        // SNES mode
         LogCreator.WriteSpecialLine("map");
         LogCreator.WriteEmptyLine();
     }

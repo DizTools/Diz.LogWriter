@@ -12,12 +12,25 @@ namespace Diz.LogWriter;
 public class AsmCreationInstructions : AsmCreationBase
 {
     public bool EnableRegionIncSrc { get; init; } = true;
-    
+    public bool NesOutputMode { get; init; } = false; // EXPERIMENTAL
+
     private readonly List<int> visitedBanks = [];
     private int currentBank = -1;
     
     private int GetBankFromOffset(int offset)
     {
+        // experimental NES mode:
+        if (NesOutputMode)
+        {
+            // fake it for now. in reality we'll want to break up the banks
+            // LogCreator.SwitchOutputStream("game.asm");
+            
+            // TODO: this literally only works correctly for MMC mapper #1
+            //  need to implement proper mapping support:
+            return offset / 0x04000;
+        }
+        
+        
         var snesAddress = Data.ConvertPCtoSnes(offset);
         if (snesAddress == -1)
             throw new InvalidDataException($"Rom offset required to map to SNES address: {offset}");
@@ -28,7 +41,6 @@ public class AsmCreationInstructions : AsmCreationBase
     private void SwitchBanksIfNeeded(int offset)
     {
         // remember: in LoRom mapping, an offset like 0 will map to SNES address $808000.
-        
         var bank = GetBankFromOffset(offset);
         if (bank == currentBank) 
             return;
@@ -292,15 +304,26 @@ public class AsmCreationInstructions : AsmCreationBase
         }
     }
 
-    private void WriteBlankLineIfStartingNewParagraph(int offset)
+    private void WriteBlankLineIfStartingNewParagraph(int offset, bool blankLineForReadPoints = false)
     {
         // skip if we're in the middle of a pointer table
         if (Data.GetFlag(offset) is FlagType.Pointer16Bit or FlagType.Pointer24Bit or FlagType.Pointer32Bit)
             return;
 
-        if (Data.IsLocationAReadPoint(offset) || AreAnyLabelsPresentAt(offset)) 
+        if (AreAnyLabelsPresentAt(offset))
+        {
             LogCreator.WriteEmptyLine();
-    }
+            return;
+        }
+
+        if (blankLineForReadPoints)  {
+            // I find this to generate too much whitespace. refine if you want it
+            var prevOffset = Util.ClampIndex(offset - 1, Data.GetRomSize());
+            var readPointChanged = Data.IsLocationAReadPoint(offset) != Data.IsLocationAReadPoint(prevOffset);
+            if (readPointChanged)
+                LogCreator.WriteEmptyLine();
+        }
+}
 
     private bool AreAnyLabelsPresentAt(int offset)
     {
