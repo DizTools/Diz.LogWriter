@@ -64,11 +64,16 @@ public class RegionAssetExportService : IRegionAssetExportService
         if (!IsAssetRegion(region))
             return null;
 
-        var exporter = exporters.FirstOrDefault(e => e.Handles == region.ExportType);
+        var exporter = exporters.FirstOrDefault(e => e.CanExport(region));
         if (exporter == null)
+        {
+            var assetTypeNote = string.IsNullOrWhiteSpace(region.AssetType)
+                ? ""
+                : $" / asset type '{region.AssetType}'";
             throw new InvalidOperationException(
-                $"Region '{region.RegionName}' wants export type {region.ExportType}, " +
+                $"Region '{region.RegionName}' wants export type {region.ExportType}{assetTypeNote}, " +
                 "but no exporter is registered for it.");
+        }
 
         var (pcOffset, bytes) = ReadRegionBytes(region);
 

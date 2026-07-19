@@ -2,7 +2,6 @@ using System;
 using System.Globalization;
 using System.IO;
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Diz.Core.Interfaces;
@@ -71,7 +70,7 @@ public static class RegionAssetUtil
 /// </summary>
 public class BinaryRegionAssetExporter : IRegionAssetExporter
 {
-    public RegionExportType Handles => RegionExportType.Binary;
+    public bool CanExport(IRegion region) => region.ExportType == RegionExportType.Binary;
 
     public string Export(RegionAssetExportRequest request)
     {
@@ -89,69 +88,43 @@ public class BinaryRegionAssetExporter : IRegionAssetExporter
 /// The .bin is what the assembler consumes, so the build stays correct even before anyone
 /// runs the codec tool; the PNG is generated from the .bin as a separate, later step.
 /// </summary>
-public class GfxRegionAssetExporter : IRegionAssetExporter
+public class GfxRegionAssetExporter : BinaryAssetExporterBase
 {
-    public RegionExportType Handles => RegionExportType.Asset;
+    protected override string AssetTypePrefix => "gfx.";
+    protected override string FileExtension => ".bin";
 
     // must match gfxpack's default (--layout-width). the manifest records it explicitly
     // anyway, so the two can't silently disagree.
     private const int DefaultLayoutWidthTiles = 16;
 
-    public string Export(RegionAssetExportRequest request)
+    protected override void Validate(RegionAssetExportRequest request)
     {
         var region = request.Region;
-        var name = RegionAssetUtil.GetAssetName(region);
-        var bytes = request.Bytes;
+        var (bpp, cellHeight, cellSize, _) = ComputeLayout(region);
+        var length = request.Bytes.Length;
 
-        var bpp = RegionAssetUtil.ParseSnesGfxBpp(region.AssetType);
-        var options = ParseAssetOptions(region);
-        var cellHeight = GetCellHeight(options);
-        // bpp/2 bitplane pairs, 2 bytes per row per pair, cellHeight rows.
-        // cellHeight defaults to 8, where a "cell" is exactly a classic 8x8 tile.
-        var cellSize = bpp * cellHeight;
-
-        if (bytes.Length == 0 || bytes.Length % cellSize != 0)
+        if (length == 0 || length % cellSize != 0)
         {
             var what = cellHeight == 8
                 ? $"{bpp}bpp tiles ({cellSize} bytes each)"
                 : $"{bpp}bpp 8x{cellHeight} cells ({cellSize} bytes each)";
             throw new InvalidOperationException(
-                $"Region '{region.RegionName}' is {bytes.Length} bytes, which is not a whole " +
+                $"Region '{region.RegionName}' is {length} bytes, which is not a whole " +
                 $"number of {what}. Adjust the region bounds so it covers complete cells.");
         }
-
-        var binPath = RegionAssetUtil.PrepareOutputPath(request.AssetRootDir, name, ".bin");
-        File.WriteAllBytes(binPath, bytes);
-
-        var manifest = BuildManifest(request, name, bpp, cellSize, cellHeight, options);
-        var manifestPath = RegionAssetUtil.PrepareOutputPath(request.AssetRootDir, name, ".json");
-        var json = manifest.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
-        File.WriteAllText(manifestPath, json + Environment.NewLine, new UTF8Encoding(false));
-
-        return $"incbin \"{request.AssetRefPrefix}/{name}.bin\"";
     }
 
     /// <summary>
-    /// Build the manifest. Shape must stay in sync with what gfxpack's load_manifest()
-    /// accepts -- gfxpack hard-errors on an unknown version rather than guessing, so a
-    /// mismatch here fails loudly at build time instead of producing wrong bytes.
+    /// Build the gfx-specific manifest pieces. Shape must stay in sync with what gfxpack's
+    /// load_manifest() accepts -- gfxpack hard-errors on an unknown version rather than
+    /// guessing, so a mismatch here fails loudly at build time instead of producing wrong bytes.
+    /// The shared envelope (name, ver, source, generated_by) is added by the base.
     /// </summary>
-    private static JsonObject BuildManifest(RegionAssetExportRequest request, string name, int bpp,
-        int cellSize, int cellHeight, JsonObject options)
+    protected override AssetManifestBlock BuildTypeBlock(RegionAssetExportRequest request)
     {
         var region = request.Region;
-        var bytes = request.Bytes;
-        var tiles = bytes.Length / cellSize;
-
-        var source = new JsonObject
-        {
-            ["rom_offset"] = $"0x{request.PcOffset:X}",
-            ["length"] = bytes.Length,
-            ["source_sha256"] = RegionAssetUtil.Sha256Hex(bytes),
-            // key name must match what gfxpack's `extract` writes ("snes_addr", not
-            // "snes_address") so both authors produce the same schema.
-            ["snes_addr"] = $"0x{region.StartSnesAddress:X6}",
-        };
+        var (bpp, cellHeight, cellSize, options) = ComputeLayout(region);
+        var tiles = request.Bytes.Length / cellSize;
 
         var gfx = new JsonObject
         {
@@ -167,30 +140,27 @@ public class GfxRegionAssetExporter : IRegionAssetExporter
         if (cellHeight == 8)
             gfx["tile_h"] = 8;
 
-        var manifest = new JsonObject
+        return new AssetManifestBlock
         {
-            ["name"] = name,
-            ["type"] = $"gfx.snes.{bpp}bpp",
+            TypeString = $"gfx.snes.{bpp}bpp",
+            BlockKey = "gfx",
+            Block = gfx,
+            Options = options,
         };
+    }
 
-        // `ver` omitted means "latest", which is the default and what we want most of the
-        // time. only pin it when the project has explicitly asked for a specific version.
-        if (!string.IsNullOrWhiteSpace(region.AssetVersion))
-            manifest["ver"] = region.AssetVersion.Trim();
-
-        manifest["source"] = source;
-        manifest["gfx"] = gfx;
-
-        // free-form passthrough. gfxpack merges "options" over "gfx", so anything in here
-        // wins. Diz deliberately does not validate the contents beyond "is a JSON object" --
-        // the codec owns that vocabulary, and duplicating it here would just create a second
-        // place to keep in sync.
-        if (options != null)
-            manifest["options"] = options.DeepClone();
-
-        manifest["generated_by"] = "DiztinGUIsh";
-
-        return manifest;
+    /// <summary>
+    /// Parse the region's gfx layout once, so Validate() and BuildTypeBlock() can't disagree
+    /// about bpp/cell size. bpp/2 bitplane pairs, 2 bytes per row per pair, cellHeight rows;
+    /// cellHeight defaults to 8, where a "cell" is exactly a classic 8x8 tile.
+    /// </summary>
+    private static (int bpp, int cellHeight, int cellSize, JsonObject options) ComputeLayout(IRegion region)
+    {
+        var bpp = RegionAssetUtil.ParseSnesGfxBpp(region.AssetType);
+        var options = ParseAssetOptions(region);
+        var cellHeight = GetCellHeight(options);
+        var cellSize = bpp * cellHeight;
+        return (bpp, cellHeight, cellSize, options);
     }
 
     /// <summary>

@@ -14,7 +14,8 @@ public class LogWriterServiceRegistration : ICompositionRoot
         serviceRegistry.Register<LogWriterSettings, ISampleAssemblyTextGenerator>(CreateSampleAssemblyFromSettings);
 
         // region asset exporters. named registrations so GetAllInstances<> picks up every
-        // one of them; the service matches on RegionExportType, not on the name.
+        // one of them; the service matches via IRegionAssetExporter.CanExport (ExportType for
+        // plain binary, AssetType prefix for manifest-writing asset types), not on the name.
         serviceRegistry.Register<IRegionAssetExporter, BinaryRegionAssetExporter>("bin");
         serviceRegistry.Register<IRegionAssetExporter, GfxRegionAssetExporter>("gfx");
     }
