@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Diz.Core.Interfaces;
@@ -11,6 +12,13 @@ using JetBrains.Annotations;
 namespace Diz.LogWriter;
 
 // this class outputs the meat of the assembly generation process, it prints the actual assembler instructions
+//
+// Output splitting (which file a byte's assembly lands in) is driven entirely by the tree of
+// file-producing regions (ExportSeparateFile == true) -- see docs/diz/regions-as-partition-plan.md
+// §A.4. There is no separate "bank" concept anymore: banks are just auto-synthesized,
+// whole-bank-sized file-producing regions (GenerateSyntheticBankRegions), Priority = 0, so they
+// reproduce today's one-file-per-bank output but are otherwise ordinary regions a user may
+// split/rename/delete freely (§A.2.3).
 public class AsmCreationInstructions : AsmCreationBase
 {
     public bool EnableRegionIncSrc { get; init; } = true;
@@ -35,51 +43,13 @@ public class AsmCreationInstructions : AsmCreationBase
     // regions we've already emitted an incbin for, so a region can't be written twice
     private readonly HashSet<string> exportedAssetRegions = [];
 
-    private readonly List<int> visitedBanks = [];
-    private int currentBank = -1;
-    
     private int GetBankFromOffset(int offset)
     {
         var snesAddress = Data.ConvertPCtoSnes(offset);
         if (snesAddress == -1)
             throw new InvalidDataException($"Rom offset required to map to SNES address: {offset}");
-        
+
         return RomUtil.GetBankFromSnesAddress(snesAddress);
-    }
-    
-    private void SwitchBanksIfNeeded(int offset)
-    {
-        // remember: in LoRom mapping, an offset like 0 will map to SNES address $808000.
-        
-        var bank = GetBankFromOffset(offset);
-        if (bank == currentBank) 
-            return;
-
-        if (currentRegionName != "") {
-            // we're in a region but that's not allowed when we cross banks,
-            // because the "incsrc" for this won't work
-            throw new InvalidDataException($"Crossing banks in a region with ExportSeparateFile=true is not allowed. In '{currentRegionName}', crossing into new bank {bank}");
-        }
-        
-        SwitchBank(bank, offset);
-        CheckForBankCrossError(offset);
-    }
-
-    // switch to a bank, one we may or may not have visited before.
-    // we also need the real offset because in LoRom, bank 80 starts at ROM offset 0x00 == SNES address 0x808000
-    private void SwitchBank(int bank, int offset)
-    {
-        LogCreator.SwitchOutputStreamForBank(bank);
-        
-        // note: we can't just bank<<16 here, it will produce incorrect output for LoRom
-        var snesAddress = Data.ConvertPCtoSnes(offset);
-
-        if (!visitedBanks.Contains(bank)) {
-            visitedBanks.Add(bank);
-            LogCreator.WriteOrgDirectiveForSnesAddress(snesAddress);
-        }
-
-        currentBank = bank;
     }
 
     private void CheckForBankCrossError(int offset)
@@ -89,39 +59,72 @@ public class AsmCreationInstructions : AsmCreationBase
             LogCreator.OnErrorReported(offset, "An instruction crossed a bank boundary.");
     }
 
-    // includes both real regions from Data, and
-    // temporary extra regions generated dynamically from comments
+    // includes both real regions from Data, comment-derived (!!ir/!!ie) temporary regions, and
+    // (after GenerateSyntheticBankRegions) the auto-synthesized whole-bank regions
     private List<IRegion> allRegions = [];
+
+    // -----------------------------------------------------------------------------------
+    // the laminar family of file-producing regions (§A.3/§A.4), computed once up front:
+    //   fileProducingRegions           -- flat list (real + synthetic bank regions)
+    //   parentOfFileProducingRegion    -- region -> its narrowest enclosing file-producing
+    //                                      region, or absent/null for a root (no parent)
+    //   rootFileProducingRegionsOrdered-- regions with no parent, sorted by StartSnesAddress
+    //                                      ascending -- these get `incsrc`'d into main.asm
+    // -----------------------------------------------------------------------------------
+    private List<IRegion> fileProducingRegions = [];
+    private Dictionary<IRegion, IRegion> parentOfFileProducingRegion = new();
+    private List<IRegion> rootFileProducingRegionsOrdered = [];
+
+    // the walk needs a stack, not a scalar: leaving a leaf and its parent at the same offset
+    // pops multiple frames at once. Bottom of stack = outermost active region, top = current
+    // output destination.
+    private readonly Stack<IRegion> regionStack = new();
+
+    // every region name we've ever pushed, across the whole scan -- catches a region (of any
+    // kind, bank or user-drawn) reused under the same name a second time.
+    private readonly HashSet<string> enteredRegionNames = [];
+
+    // SNES address of the last byte actually written, so we can detect a discontinuity
+    // (snes(p) != snes(p-1)+1) regardless of which region we're in. Null before the first byte.
+    private int? previousSnesAddress;
+
+    // tracks literal PC-bank-number transitions, purely for CheckForBankCrossError -- this is
+    // NOT the same thing as "entered a root region" once a hand-drawn region is allowed to
+    // cross a bank boundary (§A.2.3): such a region starts mid-bank on purpose, and that must
+    // not be misreported as a misaligned instruction. -1 = "no bank visited yet".
+    private int previousBankForCrossCheck = -1;
 
     protected override void Execute()
     {
         GenerateExtraIncSrcRegionsFromComments();
+        GenerateSyntheticBankRegions();
+        BuildFileProducingTree();
+
+        LogCreator.ReportRootRegions(rootFileProducingRegionsOrdered);
 
         var romSize = LogCreator.GetRomSize();
-        
+
         // perf: this is the meat of the export, takes a while
         for (var offset = 0; offset < romSize;) {
             WriteOutputLinesForRomOffset(ref offset);
         }
-
-        LogCreator.ReportVisitedBanks(visitedBanks);
     }
 
     private void GenerateExtraIncSrcRegionsFromComments()
     {
         var regionSnesAddrStart = -1;
         var regionName = "";
-        
+
         // start with all existing real regions, and we'll append from here
         allRegions.Clear();
         allRegions.AddRange(LogCreator.Data.Data.Regions);
-        
+
         foreach (var (snesAddress, comment) in LogCreator.Data.Data.Comments)
         {
             var parsed = CpuUtils.ParseCommentSpecialDirective(comment);
             if (parsed == null || parsed.IncludeSrc == CpuUtils.OperandOverride.IncSrcOverride.None)
                 continue;
-            
+
             var offset = Data.ConvertSnesToPc(snesAddress);
 
             switch (parsed.IncludeSrc)
@@ -143,7 +146,7 @@ public class AsmCreationInstructions : AsmCreationBase
                         LogCreator.OnErrorReported(offset, "Extra region directive found 'ir' without a label defined. This is not supported.");
                         continue;
                     }
-                
+
                     // good to go
                     regionName = labelName;
                     regionSnesAddrStart = snesAddress;
@@ -163,8 +166,10 @@ public class AsmCreationInstructions : AsmCreationBase
                         LogCreator.OnErrorReported(offset, "Extra region directive found 'ie'  name defined. This is not supported. Ignoring");
                         continue;
                     }
-                
-                    // good to go
+
+                    // good to go. NOTE: EndSnesAddress is inclusive (§A.2.2) -- snesAddress here
+                    // is the address the `!!ie` comment sits ON, i.e. the last byte the user
+                    // wants included, so no adjustment is needed.
                     allRegions.Add(new Region {
                         ExportSeparateFile = true,
                         RegionName = regionName,
@@ -186,95 +191,254 @@ public class AsmCreationInstructions : AsmCreationBase
         }
     }
 
-    private readonly List<string> previousRegions = [];
-    private string currentRegionName = "";
-
-    private void CheckIfRegionChanged(int offset)
+    /// <summary>
+    /// Synthesize one whole-bank, file-producing region per SNES bank spanned by the ROM,
+    /// reproducing today's one-file-per-bank split (§A.2.3: "banks are not special;
+    /// ExportSeparateFile is the only discriminator"). Purely in-memory/transient here --
+    /// nothing is written back to Data.Regions. (Persisting these on import/migration is
+    /// §A.5, a later step.)
+    ///
+    /// Mapping-mode-agnostic: steps PC by Data.GetBankSize() (0x8000 for LoRom, 0x10000
+    /// otherwise) and derives the bank purely from the SNES address at each step, so it's
+    /// correct whether or not PC and SNES bank numbering stay in lockstep.
+    /// </summary>
+    private void GenerateSyntheticBankRegions()
     {
-        if (!EnableRegionIncSrc)
+        var bankSize = Data.GetBankSize();
+        if (bankSize <= 0)
             return;
-        
-        var nextRegion = GetRegionAtOffset(offset);                     // can be null if no region here
-        var nextRegionName = nextRegion?.RegionName ?? "";
 
-        // did anything change?
-        if (nextRegionName == currentRegionName)
-            return; // no
-        
-        var leavingActiveRegion = currentRegionName.Length > 0;
-        if (leavingActiveRegion)
+        var romSize = LogCreator.GetRomSize();
+        var existingFileProducing = allRegions.Where(r => r.IsFileProducingRegion()).ToList();
+        var seenBanks = new HashSet<int>();
+
+        for (var offset = 0; offset < romSize; offset += bankSize)
         {
-            // switch out of the region and back into the current bank
-            LogCreator.SwitchOutputStreamForBank(currentBank);
-            currentRegionName = "";
+            var snesAddress = Data.ConvertPCtoSnes(offset);
+            if (snesAddress == -1)
+                continue;
+
+            var bank = RomUtil.GetBankFromSnesAddress(snesAddress);
+            if (!seenBanks.Add(bank))
+                continue;
+
+            var bankStart = bank << 16;
+            var bankEnd = bankStart | 0xFFFF;
+
+            // An existing region that EXACTLY matches this bank already covers it (nothing to
+            // add). One that CROSSES the bank boundary (overlaps but is neither an exact match
+            // nor fully nested inside) means the user/migration is expected to have already
+            // tiled this bank's remaining bytes by hand (plan doc §B.5) -- auto-synthesis must
+            // not add a region that would partially cross it.
+            var skip = existingFileProducing.Any(r =>
+            {
+                var overlaps = r.StartSnesAddress <= bankEnd && r.EndSnesAddress >= bankStart;
+                if (!overlaps)
+                    return false;
+
+                var exactMatch = r.StartSnesAddress == bankStart && r.EndSnesAddress == bankEnd;
+                var nestedWithinBank = r.StartSnesAddress >= bankStart && r.EndSnesAddress <= bankEnd;
+                return exactMatch || !nestedWithinBank;
+            });
+
+            if (skip)
+                continue;
+
+            allRegions.Add(new Region
+            {
+                RegionName = $"bank_{Util.NumberToBaseString(bank, Util.NumberBase.Hexadecimal, 2)}",
+                StartSnesAddress = bankStart,
+                EndSnesAddress = bankEnd,
+                ExportSeparateFile = true,
+                Priority = 0,
+                ExportType = RegionExportType.Assembly,
+            });
         }
-        
-        // we're back in the parent bank now
-        
-        // if we're next crossing the bank, don't allow jumping into a new region
-        // (bank crossing is part of the reason why caller must to call this function twice, before and after bank is crossed)
-        var crossingBankNext = currentBank != GetBankFromOffset(offset);
-        if (crossingBankNext)
-            return;
-        
-        var goingIntoNewRegion = nextRegionName.Length > 0;
-        if (!goingIntoNewRegion) 
-            return;
-        
-        // make sure we haven't already included a region like this (invalid)
-        if (previousRegions.Contains(currentRegionName))
-            throw new InvalidDataException($"Multiple regions  with ExportSeparateFile=true use the same name '{currentRegionName}, invalid'");
-            
-        previousRegions.Add(nextRegionName);
-            
-        var regionNameIncSrcFilenameTarget = nextRegionName + ".asm";
-            
-        // we're in the bank file, write an "incsrc" to the new file we're about to use
-        LogCreator.WriteIncludeFileDirective(regionNameIncSrcFilenameTarget, padWithBlankLine: true);
-            
-        // switch further output to the region-specific new file:
-        LogCreator.SwitchOutputStream(regionNameIncSrcFilenameTarget);
+    }
 
-        var regionBytesSize = -1;
-        if (nextRegion != null)
+    /// <summary>
+    /// Build the laminar tree over the file-producing subset of allRegions: for each region,
+    /// its parent is the narrowest OTHER file-producing region that fully contains it. Regions
+    /// with no parent are roots (get `incsrc`'d into main.asm, ordered by StartSnesAddress).
+    /// O(n^2) but n is tiny (~70 regions for CT) -- not worth a smarter structure yet.
+    /// </summary>
+    private void BuildFileProducingTree()
+    {
+        fileProducingRegions = allRegions.Where(r => r.IsFileProducingRegion()).ToList();
+
+        var byExtentAscending = fileProducingRegions
+            .OrderBy(r => r.EndSnesAddress - r.StartSnesAddress)
+            .ToList();
+
+        parentOfFileProducingRegion = new Dictionary<IRegion, IRegion>();
+        foreach (var region in byExtentAscending)
         {
-            var startOffset = Data.ConvertSnesToPc(nextRegion.StartSnesAddress);
-            var endOffset = Data.ConvertSnesToPc(nextRegion.EndSnesAddress);
-            if (startOffset != -1 && endOffset != -1 && GetBankFromOffset(startOffset) == GetBankFromOffset(endOffset)) {
-                // we'll only report the size if they're in the same bank, otherwise the math gets weird. maybe. unsure. whatever
-                // EndSnesAddress is inclusive (last byte IN the region), so add 1 to get the byte count
-                regionBytesSize = endOffset - startOffset + 1;
+            IRegion parent = null;
+            foreach (var candidate in byExtentAscending)
+            {
+                if (ReferenceEquals(candidate, region))
+                    continue;
+
+                var strictlyLarger = candidate.EndSnesAddress - candidate.StartSnesAddress >
+                                      region.EndSnesAddress - region.StartSnesAddress;
+                var contains = candidate.StartSnesAddress <= region.StartSnesAddress &&
+                                candidate.EndSnesAddress >= region.EndSnesAddress;
+
+                if (!strictlyLarger || !contains)
+                    continue;
+
+                parent = candidate;
+                break;
             }
+            parentOfFileProducingRegion[region] = parent;
         }
-        LogCreator.WriteHeaderForNewlyIncludedFile(offset, "region", nextRegionName, regionBytesSize);
 
-        currentRegionName = nextRegionName;
+        rootFileProducingRegionsOrdered = fileProducingRegions
+            .Where(r => parentOfFileProducingRegion[r] == null)
+            .OrderBy(r => r.StartSnesAddress)
+            .ToList();
     }
 
     [CanBeNull]
-    private IRegion GetRegionAtOffset(int offset)
+    private IRegion GetDeepestFileProducingRegionAt(int snesAddress)
     {
-        var snesAddress = Data.ConvertPCtoSnes(offset);
-        if (snesAddress == -1)
-            return null;
-        
-        // find any applicable regions in the surrounding context of where we are in the ROM offset
-        var applicableOrderedRegions = allRegions
-            .Where(x => 
-                snesAddress >= x.StartSnesAddress && 
-                snesAddress <= x.EndSnesAddress && 
-                x.ExportSeparateFile
-            )
-            .OrderByDescending(x => x.Priority)
-            .ToList();
+        IRegion best = null;
+        foreach (var r in fileProducingRegions)
+        {
+            if (snesAddress < r.StartSnesAddress || snesAddress > r.EndSnesAddress)
+                continue;
 
-        var region = applicableOrderedRegions.FirstOrDefault(); // can be null
-        
-        // in the future maybe we can deal with this
-        if (applicableOrderedRegions.Count > 1)
-            throw new InvalidDataException($"Multiple overlapping regions with ExportSeparateFile=true. This is not supported. '{region?.RegionName}'");
-        
-        return region;
+            if (best == null || r.EndSnesAddress - r.StartSnesAddress < best.EndSnesAddress - best.StartSnesAddress)
+                best = r;
+        }
+        return best;
+    }
+
+    // the desired region stack at this address, root-first (index 0 = outermost/no parent,
+    // last = the deepest/most specific region covering this byte). Empty if nothing covers it.
+    private List<IRegion> GetDesiredRegionStack(int snesAddress)
+    {
+        var chain = new List<IRegion>();
+        var current = GetDeepestFileProducingRegionAt(snesAddress);
+        while (current != null)
+        {
+            chain.Add(current);
+            parentOfFileProducingRegion.TryGetValue(current, out current);
+        }
+        chain.Reverse();
+        return chain;
+    }
+
+    /// <summary>
+    /// Reconcile regionStack against what should be active at this offset: pop everything past
+    /// the point where the current stack and the desired stack diverge (may be more than one
+    /// frame at once), then push whatever's new. Sets pushedRoot=true if any of the pushes this
+    /// call was a root (parentless / bank-equivalent) region -- the caller uses that to avoid
+    /// double-emitting an ORG when a root entry coincides with an address discontinuity.
+    /// </summary>
+    private void SyncRegionStack(int offset, int snesAddress, out bool pushedRoot)
+    {
+        pushedRoot = false;
+
+        var desired = GetDesiredRegionStack(snesAddress);
+
+        var current = regionStack.ToArray(); // top-first (Stack<T>.ToArray() pop order)
+        Array.Reverse(current);              // now root-first, matching `desired`
+
+        var commonDepth = 0;
+        while (commonDepth < current.Length && commonDepth < desired.Count &&
+               ReferenceEquals(current[commonDepth], desired[commonDepth]))
+        {
+            commonDepth++;
+        }
+
+        var popCount = current.Length - commonDepth;
+        for (var i = 0; i < popCount; i++)
+            regionStack.Pop();
+
+        var pushedAny = false;
+        for (var i = commonDepth; i < desired.Count; i++)
+        {
+            pushedAny = true;
+            if (EnterRegion(desired[i], offset, snesAddress))
+                pushedRoot = true;
+        }
+
+        if (popCount > 0 && !pushedAny && EnableRegionIncSrc)
+        {
+            // we left one or more regions and nothing new opened here -- resume writing into
+            // whichever file is now on top of the stack (or main.asm if we're back at the root)
+            LogCreator.SwitchOutputStream(regionStack.Count > 0
+                ? LogCreator.GetRegionStreamName(regionStack.Peek())
+                : LogCreatorStreamOutput.MainStreamFilename);
+        }
+    }
+
+    /// <summary>
+    /// Push one region onto the stack and emit whatever announces it. Returns true if this was
+    /// a root (parentless) region.
+    ///
+    /// Root entries (today: always a synthesized bank region) keep today's minimal format --
+    /// blank line + a real ORG, no header -- because that's what today's bank_XX.asm files
+    /// start with and the CT byte-identity gate depends on it staying that way.
+    ///
+    /// Nested entries keep today's "Included region" header, INCLUDING its ORG staying a
+    /// comment. Per plan doc §A.4 this was slated to become a real directive for all
+    /// file-producing regions; doing so for CT's existing nested regions (player_attack_
+    /// animations etc, none of which have any internal discontinuity) would add a real ORG
+    /// line those files don't have today, which breaks the "CT .asm text must not change"
+    /// gate -- so this deliberately keeps the narrower, byte-identical behavior. The actual
+    /// safety-critical half of §A.4 (a real ORG wherever the SNES address is actually
+    /// discontinuous, mid-region or not) is unconditional and handled in
+    /// WriteOutputLinesForRomOffset regardless of this method.
+    /// </summary>
+    private bool EnterRegion(IRegion region, int offset, int snesAddress)
+    {
+        if (!enteredRegionNames.Add(region.RegionName))
+            throw new InvalidDataException(
+                $"Multiple regions with ExportSeparateFile=true use the same name '{region.RegionName}', invalid");
+
+        regionStack.Push(region);
+
+        var isRoot = !parentOfFileProducingRegion.TryGetValue(region, out var parent) || parent == null;
+
+        if (!EnableRegionIncSrc)
+        {
+            // single-file mode: no separate output files, but root/bank-equivalent entries
+            // still get their un-gated ORG, matching today's behavior (bank switching was never
+            // gated by EnableRegionIncSrc -- only the nested "incsrc" mechanism was).
+            if (isRoot)
+                LogCreator.WriteOrgDirectiveForSnesAddress(snesAddress);
+
+            return isRoot;
+        }
+
+        var streamName = LogCreator.GetRegionStreamName(region);
+
+        if (isRoot)
+        {
+            LogCreator.SwitchOutputStream(streamName);
+            LogCreator.WriteOrgDirectiveForSnesAddress(snesAddress);
+            return true;
+        }
+
+        // we're in the parent's file (currently active stream); write an "incsrc" to the new
+        // file we're about to switch into
+        LogCreator.WriteIncludeFileDirective(streamName, padWithBlankLine: true);
+        LogCreator.SwitchOutputStream(streamName);
+
+        var regionBytesSize = -1;
+        var startOffset = Data.ConvertSnesToPc(region.StartSnesAddress);
+        var endOffset = Data.ConvertSnesToPc(region.EndSnesAddress);
+        if (startOffset != -1 && endOffset != -1 && GetBankFromOffset(startOffset) == GetBankFromOffset(endOffset))
+        {
+            // we'll only report the size if they're in the same bank, otherwise the math gets weird. maybe. unsure. whatever
+            // EndSnesAddress is inclusive (last byte IN the region), so add 1 to get the byte count
+            regionBytesSize = endOffset - startOffset + 1;
+        }
+        LogCreator.WriteHeaderForNewlyIncludedFile(offset, "region", region.RegionName, regionBytesSize);
+
+        return false;
     }
 
     // write one line of the assembly output
@@ -282,21 +446,39 @@ public class AsmCreationInstructions : AsmCreationBase
     // not a SNES address.
     private void WriteOutputLinesForRomOffset(ref int offset)
     {
-        // since we can only CHANGE INTO a region when we're in a bank, and if we're just starting, we're not in a bank yet,
-        // skip this check. this check will ONLY make sure  
-        if (currentBank != -1) {
-            CheckIfRegionChanged(offset);
+        var snesAddress = Data.ConvertPCtoSnes(offset);
+        if (snesAddress == -1)
+            throw new InvalidDataException($"Rom offset required to map to SNES address: {offset}");
+
+        // preserved from the old SwitchBanksIfNeeded/SwitchBank: report when an instruction's
+        // bytes straddle a real PC-bank boundary. Deliberately independent of the region stack
+        // above -- a file-producing region is now allowed to cross a bank boundary on purpose
+        // (§A.2.3), and that must not trip this diagnostic.
+        var bank = RomUtil.GetBankFromSnesAddress(snesAddress);
+        if (bank != previousBankForCrossCheck)
+        {
+            CheckForBankCrossError(offset);
+            previousBankForCrossCheck = bank;
         }
 
-        // switch output to another bank file if needed.
-        // note: being inside a region during a bank cross
-        SwitchBanksIfNeeded(offset);
-        CheckIfRegionChanged(offset);
+        SyncRegionStack(offset, snesAddress, out var pushedRoot);
+
+        // ORG on SNES-address discontinuity (§A.4): if this byte doesn't follow directly from
+        // the last one we wrote, asar needs to be told where we really are, or (LoRom bank
+        // seams especially) it silently mislocates everything after. Root entries above already
+        // wrote their own ORG, so skip here to avoid a redundant pair when a root entry and a
+        // discontinuity coincide (always true for LoRom bank boundaries).
+        var isContinuous = previousSnesAddress.HasValue && snesAddress == previousSnesAddress.Value + 1;
+        if (!pushedRoot && !isContinuous)
+            LogCreator.WriteOrgDirectiveForSnesAddress(snesAddress);
 
         // if an asset region starts here, emit one `incbin` and skip its bytes entirely,
         // rather than emitting them inline. must happen before the normal line generation.
         if (TryWriteAssetRegion(ref offset))
+        {
+            previousSnesAddress = Data.ConvertPCtoSnes(offset - 1);
             return;
+        }
 
         WriteBlankLineIfStartingNewParagraph(offset);
         GenerateAndWriteCodeOutputLinesForRomOffset(offset);    // the important thing
@@ -305,9 +487,14 @@ public class AsmCreationInstructions : AsmCreationBase
 
         // TODO: WARNING: TECHNICALLY, we should be checking for bank and region crosses
         //  looking at our previous offset through our new offset.  we could miss transitions or
-        //  put region includes in the wrong spot.  Happens if there's regions that begin in the middle of 
+        //  put region includes in the wrong spot.  Happens if there's regions that begin in the middle of
         //  boundaries like inside the middle byte of data labelled as 24-bit.
         offset += LogCreator.GetLineByteLength(offset);
+
+        // track the SNES address of the last byte we actually consumed (not just the one this
+        // call started at) so the next call's discontinuity check is correct even after this
+        // multi-byte advance.
+        previousSnesAddress = Data.ConvertPCtoSnes(offset - 1);
     }
 
     /// <summary>
@@ -400,7 +587,7 @@ public class AsmCreationInstructions : AsmCreationBase
         if (Data.GetFlag(offset) is FlagType.Pointer16Bit or FlagType.Pointer24Bit or FlagType.Pointer32Bit)
             return;
 
-        if (Data.IsLocationAReadPoint(offset) || AreAnyLabelsPresentAt(offset)) 
+        if (Data.IsLocationAReadPoint(offset) || AreAnyLabelsPresentAt(offset))
             LogCreator.WriteEmptyLine();
     }
 
