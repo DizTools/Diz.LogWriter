@@ -246,7 +246,10 @@ public class LogCreator : ILogCreatorForGenerator
             ? new RegionAssetExportService(
                 Data,                       // ILogCreatorDataSource is an IReadOnlyByteSource
                 Data,                       //   ...and an ISnesAddressConverter
-                [new BinaryRegionAssetExporter(), new GfxRegionAssetExporter(), new BrrRegionAssetExporter()])
+                [
+                    new BinaryRegionAssetExporter(), new GfxRegionAssetExporter(),
+                    new BrrRegionAssetExporter(), new TextRegionAssetExporter(),
+                ])
             : null;
 
         Steps =

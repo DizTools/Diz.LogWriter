@@ -280,3 +280,179 @@ public class BrrRegionAssetExporter : BinaryAssetExporterBase
             Options = null,
         };
 }
+
+/// <summary>
+/// Asset export for CT's fixed-width name tables (text.ct.mapped and kin) -- item names, tech
+/// names, menu strings: one byte per glyph, no terminator, each record padded to a fixed width.
+/// Dispatched by the "text." AssetType prefix (BinaryAssetExporterBase.CanExport), exactly like
+/// gfx is by "gfx." and BRR by "audio.".
+///
+/// Like gfx and BRR, Diz writes a verbatim `.bin` SEED plus a manifest and never decodes the
+/// text itself. The vendored `textpack.py` turns the seed into an editable `.yaml`
+/// (`textpack seed`) and that `.yaml` back into `build/assets/text/&lt;name&gt;.bin`
+/// (`textpack compile`), which the assembler `incbin`s. So FileExtension is ".bin" (the seed +
+/// incbin target), NOT ".yaml" -- the editable extension lives in the text BuildToolBinding,
+/// mirroring gfx (.png) and BRR (.brr).
+///
+/// The type-specific manifest fields Diz cannot derive from the bytes -- the character table
+/// (`tbl`), the record width, the pad byte, and the named-token map (equipment icons / control
+/// codes) -- are authored per-region in Region.AssetOptions, the same free-form escape hatch gfx
+/// uses for `cell_h`. Diz reads them, computes `count` from the region length, and writes the
+/// `text` block in the key order textpack's load_manifest expects. textpack is the authority on
+/// their meaning and validates them again at build time (an unknown manifest version is a hard
+/// error there, never a silent guess), so a mismatch fails loudly rather than emitting wrong bytes.
+/// </summary>
+public class TextRegionAssetExporter : BinaryAssetExporterBase
+{
+    protected override string AssetTypePrefix => "text.";
+
+    // the SEED + incbin-target extension (see class doc). NOT the editable ".yaml".
+    protected override string FileExtension => ".bin";
+
+    protected override void Validate(RegionAssetExportRequest request)
+    {
+        var region = request.Region;
+        var recordWidth = GetRecordWidth(ParseAssetOptions(region), region);
+        var length = request.Bytes.Length;
+
+        // Fixed-width records with no terminator: the region must be a whole number of them, or
+        // every record past the ragged point is mis-framed. Fail LOUDLY naming the region rather
+        // than shipping a name table shifted by a few bytes.
+        if (length == 0 || length % recordWidth != 0)
+            throw new InvalidOperationException(
+                $"Region '{region.RegionName}' is {length} bytes, which is not a whole number of " +
+                $"{recordWidth}-byte records. Adjust the region bounds (or the record_width in " +
+                "Asset Options) so it covers complete records.");
+    }
+
+    protected override AssetManifestBlock BuildTypeBlock(RegionAssetExportRequest request)
+    {
+        var region = request.Region;
+        var options = ParseAssetOptions(region);
+        var recordWidth = GetRecordWidth(options, region);
+        var count = request.Bytes.Length / recordWidth;
+
+        // Key order matches what textpack's `extract` writes and `load_manifest` reads, so the
+        // tracked manifest stays byte-stable: tbl, count, record_width, pad, [tokens].
+        var text = new JsonObject
+        {
+            ["tbl"] = GetRequiredString(options, "tbl", region),
+            ["count"] = count,
+            ["record_width"] = recordWidth,
+            ["pad"] = GetPad(options, region),
+        };
+        var tokens = GetTokens(options, region);
+        if (tokens != null)
+            text["tokens"] = tokens;
+
+        return new AssetManifestBlock
+        {
+            // authored verbatim into the manifest and read by textpack; Diz never decodes it.
+            TypeString = region.AssetType,
+            BlockKey = "text",
+            Block = text,
+            // every option is consumed into the text block above; nothing passes through to a
+            // separate "options" key.
+            Options = null,
+        };
+    }
+
+    /// <summary>
+    /// Parse Region.AssetOptions into the required options object. Unlike gfx -- where options are
+    /// optional and only carry cell_h -- a text asset CANNOT be described without them: the table,
+    /// width, and pad byte have no defaults Diz could invent. So an empty AssetOptions is a hard
+    /// error that names what's missing, not a silent fallback.
+    /// </summary>
+    private static JsonObject ParseAssetOptions(IRegion region)
+    {
+        var raw = region.AssetOptions;
+        if (string.IsNullOrWhiteSpace(raw))
+            throw new InvalidOperationException(
+                $"Region '{region.RegionName}' is a text asset but has no Asset Options. Text " +
+                "assets require at least " +
+                "{\"tbl\": \"text/<table>.tbl\", \"record_width\": N, \"pad\": \"0xNN\"} " +
+                "(plus an optional \"tokens\" map).");
+
+        JsonNode parsed;
+        try
+        {
+            parsed = JsonNode.Parse(raw);
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException(
+                $"Region '{region.RegionName}': Asset Options is not valid JSON: {ex.Message}", ex);
+        }
+
+        if (parsed is not JsonObject obj)
+            throw new InvalidOperationException(
+                $"Region '{region.RegionName}': Asset Options must be a JSON object, not a " +
+                $"{parsed?.GetValueKind().ToString() ?? "null"}.");
+
+        return obj;
+    }
+
+    private static int GetRecordWidth(JsonObject options, IRegion region)
+    {
+        if (!options.TryGetPropertyValue("record_width", out var node) || node == null ||
+            node.GetValueKind() != JsonValueKind.Number || !node.AsValue().TryGetValue<int>(out var width))
+            throw new InvalidOperationException(
+                $"Region '{region.RegionName}': Asset Options must set an integer \"record_width\".");
+        if (width < 1)
+            throw new InvalidOperationException(
+                $"Region '{region.RegionName}': record_width must be >= 1, got {width}.");
+        return width;
+    }
+
+    private static string GetRequiredString(JsonObject options, string key, IRegion region)
+    {
+        if (!options.TryGetPropertyValue(key, out var node) || node == null ||
+            node.GetValueKind() != JsonValueKind.String)
+            throw new InvalidOperationException(
+                $"Region '{region.RegionName}': Asset Options must set a string \"{key}\".");
+        var value = node.GetValue<string>();
+        if (string.IsNullOrWhiteSpace(value))
+            throw new InvalidOperationException(
+                $"Region '{region.RegionName}': Asset Options \"{key}\" must not be empty.");
+        return value;
+    }
+
+    /// <summary>
+    /// The pad byte, verbatim as authored (e.g. "0xEF"). Validated as a byte literal here so a
+    /// typo fails at export, not at build time -- textpack checks it again as the authority.
+    /// </summary>
+    private static string GetPad(JsonObject options, IRegion region)
+    {
+        var pad = GetRequiredString(options, "pad", region);
+        if (!TryParseByteLiteral(pad, out _))
+            throw new InvalidOperationException(
+                $"Region '{region.RegionName}': Asset Options \"pad\" must be a byte literal like " +
+                $"\"0xEF\" (0..255), got \"{pad}\".");
+        return pad;
+    }
+
+    private static bool TryParseByteLiteral(string s, out int value)
+    {
+        s = s.Trim();
+        var ok = s.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+            ? int.TryParse(s.AsSpan(2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out value)
+            : int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+        return ok && value is >= 0 and <= 0xFF;
+    }
+
+    /// <summary>
+    /// The optional named-token map (equipment icons / control codes), deep-cloned so it detaches
+    /// from the parsed options tree before it's grafted into the manifest (a JsonNode can't have
+    /// two parents). Null when absent -- the block simply omits "tokens".
+    /// </summary>
+    private static JsonObject GetTokens(JsonObject options, IRegion region)
+    {
+        if (!options.TryGetPropertyValue("tokens", out var node) || node == null)
+            return null;
+        if (node is not JsonObject tokens)
+            throw new InvalidOperationException(
+                $"Region '{region.RegionName}': Asset Options \"tokens\" must be an object of " +
+                $"NAME -> \"0xNN\", not a {node.GetValueKind()}.");
+        return tokens.DeepClone().AsObject();
+    }
+}

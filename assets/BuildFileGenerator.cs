@@ -111,6 +111,12 @@ public class BuildFileGenerator
     /// <summary>The generic passthrough codec filename (vendored alongside gfxpack).</summary>
     public const string BinpackToolFile = "binpack.py";
 
+    /// <summary>Ninja var name of the fixed-width text codec (item/tech/menu name tables).</summary>
+    private const string TextpackToolVar = "textpack";
+
+    /// <summary>The text codec filename (vendored alongside gfxpack).</summary>
+    public const string TextpackToolFile = "textpack.py";
+
     /// <summary>
     /// The codec bindings, keyed by AssetType prefix. This is the one place a new asset type
     /// gets added -- register a binding, and the per-asset build edges pick it up by prefix.
@@ -150,6 +156,27 @@ public class BuildFileGenerator
             CompileDescription = "binpack compile $name",
             SeedCommand = $"python ${BinpackToolVar} seed --name $name $search_roots",
             SeedDescription = "binpack seed $name",
+        },
+
+        // text.* -> fixed-width name tables via textpack. Own tool var (declares a `textpack = ...`
+        // line), like binpack. The editable source is `.yaml`; textpack reads the table/width/pad/
+        // tokens from the manifest's `text` block (written by TextRegionAssetExporter), so the
+        // commands pass no extra flags -- the manifest is the single source of truth. `seed`
+        // materializes the .yaml from the Diz-written seed .bin; `compile` turns it back into the
+        // incbin'd build .bin. (Phase 3 will swap `seed` for `extract`; the verb stays `seed` here.)
+        new BuildToolBinding
+        {
+            TypePrefix = "text.",
+            ToolVar = TextpackToolVar,
+            ToolFile = TextpackToolFile,
+            SourceExtension = ".yaml",
+            CompiledExtension = ".bin",
+            CompileRule = "text_compile",
+            SeedRule = "text_seed",
+            CompileCommand = $"python ${TextpackToolVar} compile --name $name $search_roots --out $out",
+            CompileDescription = "textpack compile $name",
+            SeedCommand = $"python ${TextpackToolVar} seed --name $name $search_roots",
+            SeedDescription = "textpack seed $name",
         },
     };
 
