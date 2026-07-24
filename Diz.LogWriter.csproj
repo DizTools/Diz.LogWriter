@@ -27,6 +27,9 @@
       <PackageReference Include="LightInject">
         <Version>6.6.4</Version>
       </PackageReference>
+      <PackageReference Include="YamlDotNet">
+        <Version>16.*</Version>
+      </PackageReference>
     </ItemGroup>
 
 </Project>
