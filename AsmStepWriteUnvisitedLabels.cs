@@ -1,8 +1,10 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Xml;
 using CsvHelper;
 using Diz.Core.Interfaces;
@@ -12,6 +14,7 @@ using Diz.LogWriter.assemblyGenerators;
 using ExtendedXmlSerializer;
 using ExtendedXmlSerializer.Configuration;
 using JetBrains.Annotations;
+using YamlDotNet.Serialization;
 
 namespace Diz.LogWriter;
 
@@ -97,10 +100,35 @@ public class AsmStepWriteAllLabels : AsmStepExtraLabelOutputBase
 
     protected virtual void OutputLabelAtOffset(string category, int snesAddress)
     {
+        var attribution = BuildAttributionComment(snesAddress);
         var outputLines = LogCreator.LineGenerator.GenerateSpecialLines("labelassign", context: new LineGenerator.TokenExtraContextSnes(snesAddress));
         foreach (var outputLine in outputLines) {
-            LogCreator.WriteLine($";!^!-{category}-! {outputLine}");
+            LogCreator.WriteLine($";!^!-{category}-! {outputLine}{attribution}");
         }
+    }
+
+    // Build a trailing asm-comment segment carrying label attribution, e.g.
+    // "  ; [author=someone confidence=VeryHigh]". Only the parts that are actually set are
+    // included (author only, confidence only, or both); an unspecified confidence ("") is
+    // omitted, and an empty author is omitted. If neither is set, returns "" so the line is
+    // byte-identical to output without attribution. Kept as a comment so the line stays valid
+    // assembly. The label lookup can return null (guarded).
+    private string BuildAttributionComment(int snesAddress)
+    {
+        var label = Data.Labels.GetLabel(snesAddress);
+        if (label == null)
+            return "";
+
+        var author = label.Author ?? "";
+        var confidence = label.Confidence ?? "";
+
+        var segment = "";
+        if (!string.IsNullOrWhiteSpace(author))
+            segment = $"author={author}";
+        if (confidence != "")
+            segment += (segment.Length > 0 ? " " : "") + $"confidence={confidence}";
+
+        return segment.Length == 0 ? "" : $"  ; [{segment}]";
     }
 }
 
@@ -115,17 +143,25 @@ public class AsmStepExtraOutputAllLabelsCsv : AsmStepWriteAllLabels
         {
             Name = printableData.Name;
             Comment = printableData.Comment;
+            Author = printableData.Author;
+            Confidence = printableData.Confidence ?? "";
             UsedStatus = usedStatus;
             SnesAddress = printableData.SnesAddress;
             SnesAddressHex = printableData.GetSnesAddressFormatted();
         }
 
+        // CsvHelper writes columns in property-declaration order, so the declaration order
+        // below is the on-disk column order: SnesAddressHex, SnesAddress, Name, Comment,
+        // Author, Confidence, UsedStatus. Author/Confidence are always present (blank when
+        // unset) to keep a stable schema. Confidence is a string ("" for unspecified).
         public string SnesAddressHex { get; init; }
 
         public int SnesAddress { get; init; }
 
         public string Name { get; init; }
         public string Comment { get; init; }
+        public string Author { get; init; }
+        public string Confidence { get; init; }
         public string UsedStatus { get; init; }
     } 
 
@@ -274,7 +310,133 @@ public class AsmStepExtraOutputBsneSymFile : AsmStepWriteAllLabels
         // print a 24bit number in the format BSNES .sym files like:
         // "c2:0aae"
         return address.ToString("X6").Insert(2, ":");
-            
+
         // (this function doesn't care if it's SNES address or offset, it's printing the number)
+    }
+}
+
+// Emit export-manifest.yaml: attribution statistics over EVERY persistent (project) label,
+// INCLUDING labels whose author was excluded from the actual export output. The YAML body is
+// produced by YamlDotNet over an insertion-ordered in-memory structure (so it handles quoting/
+// escaping and key order). Skipped in single-file mode, which has no separate sidecar file.
+public class AsmStepExtraOutputManifestYaml : AsmStepExtraLabelOutputBase
+{
+    // the bucket name for a label whose confidence is unspecified (""); it always sorts LAST in
+    // the per-author confidence breakdown, after every named confidence level.
+    private const string UnspecifiedConfidenceBucket = "unspecified";
+
+    // labels with no author land here; it always sorts LAST, after every named author.
+    private const string UnknownAuthorBucket = "unknown";
+
+    protected override void Execute()
+    {
+        LogCreator.SwitchOutputStream("export-manifest.yaml");
+
+        // Read the UNFILTERED persistent label set: never temporary labels, and never the
+        // export author-filter -- so the stats report every author even when an export
+        // exclusion is active. LogCreator already casts the shared label service to
+        // LabelsServiceWithTemp for the export filter; the accessor is reached the same way.
+        var labels = (Data.Labels as LabelsServiceWithTemp)?.AllPersistentLabelsUnfiltered
+                     ?? Enumerable.Empty<KeyValuePair<int, IAnnotationLabel>>();
+
+        // write line-by-line so each line gets the platform newline, consistent with the rest
+        // of the export (rather than embedding raw '\n' from the builder).
+        foreach (var line in BuildManifestYaml(labels.Select(kvp => kvp.Value)).Split('\n'))
+            LogCreator.WriteLine(line);
+    }
+
+    private string BuildManifestYaml(IEnumerable<IAnnotationLabel> labels)
+    {
+        // author bucket -> (confidence bucket name -> count). the confidence buckets are dynamic
+        // over whatever confidence strings actually appear: "" maps to "unspecified", any other
+        // level is lowercased for the key (so "VeryHigh" -> "veryhigh").
+        var buckets = new Dictionary<string, Dictionary<string, int>>();
+        var total = 0;
+
+        foreach (var label in labels)
+        {
+            total++;
+            var author = label.Author ?? "";
+            var bucketKey = string.IsNullOrWhiteSpace(author) ? UnknownAuthorBucket : author.Trim();
+
+            if (!buckets.TryGetValue(bucketKey, out var counts))
+            {
+                counts = new Dictionary<string, int>();
+                buckets[bucketKey] = counts;
+            }
+
+            var confidence = label.Confidence ?? "";
+            var confidenceKey = string.IsNullOrEmpty(confidence)
+                ? UnspecifiedConfidenceBucket
+                : confidence.ToLowerInvariant();
+            counts[confidenceKey] = counts.GetValueOrDefault(confidenceKey) + 1;
+        }
+
+        // named authors sorted case-insensitively ascending; the "unknown" bucket always last.
+        var orderedAuthors = buckets.Keys
+            .Where(k => k != UnknownAuthorBucket)
+            .OrderBy(k => k, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (buckets.ContainsKey(UnknownAuthorBucket))
+            orderedAuthors.Add(UnknownAuthorBucket);
+
+        // Build the manifest as an insertion-ordered structure so YamlDotNet emits keys in this
+        // exact order. Dictionary<string, object> preserves insertion order for enumeration, which
+        // the serializer walks; nesting mirrors the export:/stats: shape.
+        var attribution = new Dictionary<string, object>();
+        foreach (var authorKey in orderedAuthors)
+        {
+            var counts = buckets[authorKey];
+
+            // the manifest step has no access to the project's ConfidenceLevels vocabulary order,
+            // so it cannot reproduce worst->best ordering. instead: named levels alphabetical,
+            // "unspecified" always last, for a deterministic and stable output.
+            var orderedConfidence = counts.Keys
+                .Where(k => k != UnspecifiedConfidenceBucket)
+                .OrderBy(k => k, StringComparer.Ordinal)
+                .ToList();
+            if (counts.ContainsKey(UnspecifiedConfidenceBucket))
+                orderedConfidence.Add(UnspecifiedConfidenceBucket);
+
+            var confidence = new Dictionary<string, object>();
+            foreach (var confidenceKey in orderedConfidence)
+                confidence[confidenceKey] = counts[confidenceKey];
+
+            attribution[authorKey] = new Dictionary<string, object>
+            {
+                ["all"] = counts.Values.Sum(),
+                ["confidence"] = confidence,
+            };
+        }
+
+        var excluded = LogCreator.Settings.ExcludedLabelAuthors;
+        var excludedAuthors = excluded == null ? new List<string>() : excluded.ToList();
+
+        var root = new Dictionary<string, object>
+        {
+            ["export"] = new Dictionary<string, object>
+            {
+                ["excluded_authors"] = excludedAuthors,
+            },
+            ["stats"] = new Dictionary<string, object>
+            {
+                ["labels"] = new Dictionary<string, object>
+                {
+                    ["total"] = total,
+                    ["attribution"] = attribution,
+                },
+            },
+        };
+
+        var body = new SerializerBuilder().Build().Serialize(root);
+
+        // YamlDotNet doesn't emit leading document comments, so prepend the fixed banner by hand.
+        const string banner =
+            "# Diz export manifest\n" +
+            "# Attribution stats cover EVERY persistent project label, including any authors\n" +
+            "# excluded from the export output (listed under export.excluded_authors).\n";
+
+        // WriteLine adds the final newline; avoid a doubled trailing blank line.
+        return (banner + body).TrimEnd('\n');
     }
 }

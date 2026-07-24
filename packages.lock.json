@@ -25,6 +25,12 @@
         "resolved": "6.6.4",
         "contentHash": "xId1F9OpzVvyNu3wcdPR4EcNUihcT5U9wiUJOi0tetuDOia1uAiFJzqmYGdRPsqAsgDb6o8sfoQCx5yMFFDsVw=="
       },
+      "YamlDotNet": {
+        "type": "Direct",
+        "requested": "[16.*, )",
+        "resolved": "16.3.0",
+        "contentHash": "SgMOdxbz8X65z8hraIs6hOEdnkH6hESTAIUa7viEngHOYaH+6q5XJmwr1+yb9vJpNQ19hCQY69xbFsLtXpobQA=="
+      },
       "FluentValidation": {
         "type": "Transitive",
         "resolved": "11.9.0",

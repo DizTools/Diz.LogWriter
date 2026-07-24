@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using Diz.Core.export;
 using Diz.Core.Interfaces;
+using Diz.Core.model;
 using Diz.Core.util;
 using Diz.LogWriter.assets;
 using Diz.LogWriter.util;
@@ -117,6 +118,13 @@ public class LogCreator : ILogCreatorForGenerator
 
     private void LockLabelsCache()
     {
+        // export author-filter (PHASE 2b): hand the blocklist to the shared label service BEFORE it
+        // locks/builds its cache. This is the single seam that both the label listing AND operand
+        // naming consult (operand naming reaches labels via SnesApi.Labels == Data.Labels, NOT via
+        // this LogCreatorByteSource), so filtering has to live on the underlying label service.
+        if (Data.TemporaryLabelProvider is LabelsServiceWithTemp labelService)
+            labelService.SetExportLabelAuthorFilter(Settings.ExcludedLabelAuthors);
+
         Data.TemporaryLabelProvider.LockLabelsCache();
     }
 
@@ -334,6 +342,18 @@ public class LogCreator : ILogCreatorForGenerator
                 Enabled = Settings.IncludeUnusedLabels,
                 OutputFilename = "bsnes.sym", // would be cool to output with the same base filename of the ROM.
 
+                LogCreator = this,
+                LabelTracker = LabelTracker,
+            },
+
+            // attribution statistics over the UNFILTERED persistent label set (every author,
+            // INCLUDING any excluded from the export output). reads unfiltered persistent labels
+            // directly, NOT the export-filtered Data.Labels. Skipped in single-file mode, which has
+            // no separate sidecar file for it to go to (its output would concatenate into the main
+            // assembly string).
+            new AsmStepExtraOutputManifestYaml
+            {
+                Enabled = !singleFileMode,
                 LogCreator = this,
                 LabelTracker = LabelTracker,
             },

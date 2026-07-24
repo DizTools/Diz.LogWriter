@@ -390,12 +390,14 @@ public class AssemblyGenerateXFlag : AssemblyPartialLineGenerator
 // example output:  "FnMultiplyByTwo = $808012"
 public class AssemblyGenerateLabelAssign : AssemblyPartialLineGenerator
 {
-    public record PrintableLabelDataAtOffset(int SnesAddress, string Name, string Comment)
+    // Confidence is the raw stored level string: "" when unspecified, otherwise the level name
+    // (e.g. "None", "Medium", "VeryHigh"). Emitted verbatim in every text/CSV export.
+    public record PrintableLabelDataAtOffset(int SnesAddress, string Name, string Comment, string Author, string Confidence)
     {
-        public string GetSnesAddressFormatted() => 
+        public string GetSnesAddressFormatted() =>
             Util.NumberToBaseString(SnesAddress, Util.NumberBase.Hexadecimal, 6, true);
     }
-        
+
     public static List<PrintableLabelDataAtOffset> GetPrintableLabelsDataAtSnesAddress(int snesAddress, IReadOnlyLabelProvider labelProvider) 
     {
         var label = labelProvider.GetLabel(snesAddress);
@@ -412,7 +414,7 @@ public class AssemblyGenerateLabelAssign : AssemblyPartialLineGenerator
         
         return allLabelNames
             .Where(x => !string.IsNullOrWhiteSpace(x))
-            .Select(x => new PrintableLabelDataAtOffset(snesAddress, x, labelComment))
+            .Select(x => new PrintableLabelDataAtOffset(snesAddress, x, labelComment, label.Author ?? "", label.Confidence ?? ""))
             .ToList();
     }
         
