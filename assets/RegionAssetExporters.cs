@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Security.Cryptography;
@@ -379,6 +380,17 @@ public class TextRegionAssetExporter : BinaryAssetExporterBase
                 $"Region '{region.RegionName}' is {length} bytes, which is not a whole number of " +
                 $"{recordWidth}-byte records. Adjust the region bounds (or the record_width in " +
                 "Asset Options) so it covers complete records.");
+    }
+
+    /// <summary>
+    /// The character table is the one input the manifest only NAMES rather than contains, so the
+    /// build has to know about it: editing the table must re-decode the text, or the build keeps
+    /// serving text rendered with the old glyph map.
+    /// </summary>
+    protected override IReadOnlyList<string> BuildSharedFiles(RegionAssetExportRequest request)
+    {
+        var region = request.Region;
+        return [GetRequiredString(ParseAssetOptions(region), "tbl", region)];
     }
 
     protected override AssetManifestBlock BuildTypeBlock(RegionAssetExportRequest request)

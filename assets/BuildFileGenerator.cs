@@ -3,33 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
-using System.Text.Json;
-using System.Text.Json.Nodes;
-using Diz.Core.Interfaces;
 
 namespace Diz.LogWriter.assets;
-
-/// <summary>
-/// Describes one asset the build has to rebuild. Deliberately a flat record rather than an
-/// IRegion, so the generator can be tested without a project and so a future non-region
-/// asset source can feed it too.
-/// </summary>
-public class BuildAssetEntry
-{
-    /// <summary>Logical name, e.g. "gfx/font".</summary>
-    public string Name { get; init; }
-
-    /// <summary>Codec contract, e.g. "gfx.snes.2bpp".</summary>
-    public string AssetType { get; init; }
-
-    /// <summary>
-    /// The region's raw Asset Options JSON, verbatim. Carried so the generator can pull out
-    /// references to shared files (e.g. a text asset's .tbl) and make them implicit deps of
-    /// the extract edge -- editing the table must re-extract, or the build would keep serving
-    /// text decoded with the old one.
-    /// </summary>
-    public string AssetOptions { get; init; }
-}
 
 /// <summary>
 /// The repo layout the generated build works in. Every path is relative to the build root
@@ -104,13 +79,6 @@ public sealed class BuildToolBinding
 
     /// <summary>Full `description =` line body for the extract rule.</summary>
     public string ExtractDescription { get; init; }
-
-    /// <summary>
-    /// Asset Options keys whose values name a shared file this codec reads (e.g. a text
-    /// asset's "tbl"). Those files become implicit deps of the extract edge, so editing one
-    /// re-extracts everything that reads it. Empty for codecs with no shared inputs.
-    /// </summary>
-    public IReadOnlyList<string> SharedFileOptionKeys { get; init; } = [];
 
     public bool Handles(string assetType) =>
         assetType?.StartsWith(TypePrefix, StringComparison.Ordinal) == true;
@@ -196,8 +164,8 @@ public class BuildFileGenerator
         // line), like binpack. The editable source is `.yaml`; textpack reads the table/width/pad/
         // tokens from the manifest's `text` block (written by TextRegionAssetExporter), so the
         // commands pass no extra flags -- the manifest is the single source of truth. The one
-        // input the manifest only NAMES rather than contains is the character table, so `tbl`
-        // is declared here as a shared-file key and becomes an implicit dep of the extract edge.
+        // input the manifest only NAMES rather than contains is the character table; the text
+        // exporter reports it as a shared file, and it becomes an implicit dep of the extract edge.
         new BuildToolBinding
         {
             TypePrefix = "text.",
@@ -211,7 +179,6 @@ public class BuildFileGenerator
             CompileDescription = "textpack compile $name",
             ExtractCommand = ExtractCommandFor(TextpackToolVar),
             ExtractDescription = "textpack extract $out",
-            SharedFileOptionKeys = ["tbl"],
         },
 
         // raw.* -> verbatim byte ranges via binpack, the same codec BRR uses -- a region marked
@@ -276,62 +243,19 @@ public class BuildFileGenerator
     }
 
     /// <summary>
-    /// Collect the asset regions that the build needs to rebuild: every region that isn't
-    /// plain assembly. Plain-binary regions are included because they too are extracted from
-    /// the ROM and recompiled by a codec -- nothing in the exported tree carries their bytes,
-    /// so without a build edge there would be nothing to incbin.
+    /// Resolve a node's shared files to build-root-relative paths under the hand-authored asset
+    /// layer -- that layer is where these live; a mod overriding one is resolved by the codec at
+    /// run time, which ninja cannot know about. The node already names them: the exporter that
+    /// wrote the manifest is what validated the authoring they came from.
     /// </summary>
-    public static IReadOnlyList<BuildAssetEntry> CollectAssets(IEnumerable<IRegion> regions) =>
-        regions
-            .Where(r => r.ExportType != RegionExportType.Assembly)
-            .Select(r => new BuildAssetEntry
-            {
-                Name = RegionAssetUtil.GetAssetName(r),
-                AssetType = RegionAssetUtil.GetAssetType(r),
-                AssetOptions = r.AssetOptions,
-            })
-            .OrderBy(a => a.Name, StringComparer.Ordinal) // deterministic output => clean diffs
-            .ToList();
+    private IEnumerable<string> SharedFileDeps(AssetBuildNode asset) =>
+        (asset.SharedFiles ?? [])
+        .Where(reference => !string.IsNullOrWhiteSpace(reference))
+        .Select(reference => $"{settings.AssetsDir}/{reference.Replace('\\', '/').TrimStart('/')}")
+        .Distinct(StringComparer.Ordinal)
+        .OrderBy(path => path, StringComparer.Ordinal); // deterministic output => clean diffs
 
-    /// <summary>
-    /// Shared files an asset's codec reads, as build-root-relative paths under the
-    /// hand-authored asset layer (that layer is where these live; a mod overriding one is
-    /// resolved by the codec at run time, which ninja cannot know about).
-    ///
-    /// Reads the options leniently: the asset exporter is the authority on their shape and has
-    /// already rejected anything malformed by the time build files are written. A key that
-    /// isn't a non-empty string simply contributes no dep.
-    /// </summary>
-    private IEnumerable<string> SharedFileDeps(BuildAssetEntry asset, BuildToolBinding binding)
-    {
-        if (binding.SharedFileOptionKeys.Count == 0 || string.IsNullOrWhiteSpace(asset.AssetOptions))
-            return [];
-
-        JsonNode parsed;
-        try
-        {
-            parsed = JsonNode.Parse(asset.AssetOptions);
-        }
-        catch (JsonException)
-        {
-            return [];
-        }
-
-        if (parsed is not JsonObject options)
-            return [];
-
-        return binding.SharedFileOptionKeys
-            .Select(key =>
-                options.TryGetPropertyValue(key, out var node) && node?.GetValueKind() == JsonValueKind.String
-                    ? node.GetValue<string>()
-                    : null)
-            .Where(reference => !string.IsNullOrWhiteSpace(reference))
-            .Select(reference => $"{settings.AssetsDir}/{reference.Replace('\\', '/').TrimStart('/')}")
-            .Distinct(StringComparer.Ordinal)
-            .OrderBy(path => path, StringComparer.Ordinal); // deterministic output => clean diffs
-    }
-
-    public string Generate(IReadOnlyList<BuildAssetEntry> assets)
+    public string Generate(IReadOnlyList<AssetBuildNode> assets)
     {
         var sb = new StringBuilder();
         var s = settings;
@@ -415,7 +339,9 @@ public class BuildFileGenerator
             sb.AppendLine();
         }
 
-        foreach (var asset in assets)
+        // sorted here, not by the caller: build.ninja is checked in, so the order must not
+        // depend on which order the regions happened to be exported in.
+        foreach (var asset in assets.OrderBy(a => a.Name, StringComparer.Ordinal))
         {
             var binding = BindingFor(asset.AssetType);
             var outBin = $"{s.BuildDir}/{RegionAssetExportService.AssetSubDir}/{asset.Name}{binding.CompiledExtension}";
@@ -428,7 +354,7 @@ public class BuildFileGenerator
             // re-extract; the ROM is listed even though it should never change, because if it
             // does, everything decoded from it is stale.
             var extractDeps = string.Join(" ",
-                new[] { manifest, toolRef, "$orig_rom" }.Concat(SharedFileDeps(asset, binding)));
+                new[] { manifest, toolRef, "$orig_rom" }.Concat(SharedFileDeps(asset)));
 
             sb.AppendLine($"# {asset.Name}  ({asset.AssetType})");
             sb.AppendLine($"build {extracted}: {binding.ExtractRule} | {extractDeps}");
@@ -470,7 +396,7 @@ public class BuildFileGenerator
     /// Write build.ninja (always regenerated) into the export root, and seed
     /// build-config.ninja alongside it (only if missing).
     /// </summary>
-    public void WriteTo(string exportRootDir, IReadOnlyList<BuildAssetEntry> assets)
+    public void WriteTo(string exportRootDir, IReadOnlyList<AssetBuildNode> assets)
     {
         Directory.CreateDirectory(exportRootDir);
         SeedConfigIfMissing(exportRootDir);

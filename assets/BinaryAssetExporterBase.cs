@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Text.Json;
@@ -20,6 +21,10 @@ namespace Diz.LogWriter.assets;
 ///
 /// Subclasses supply only the type-specific pieces: the compiled-payload extension, a
 /// validation pass, and the manifest's `type` string + typed block (e.g. gfx:{} / audio:{}).
+/// A subclass describing a structured blob instead supplies a member list and, optionally, a
+/// transform pipeline, and reports the build nodes for the members it declared. Everything is
+/// widened through those extension points rather than by overriding Export, so the manifest
+/// writer and its key order stay in exactly one place.
 ///
 /// Dispatch is by AssetType PREFIX (e.g. "gfx.", "audio."), not by the RegionExportType enum:
 /// asset regions share one ExportType, so the enum alone cannot tell gfx from audio. Routing on
@@ -54,8 +59,51 @@ public abstract class BinaryAssetExporterBase : IRegionAssetExporter
     /// The type-specific manifest pieces: the "type" string and the typed block
     /// (e.g. key "gfx" -&gt; { bpp, tiles, ... }), plus any free-form "options" object.
     /// The shared parts (name, ver, source, generated_by) are added by the base.
+    ///
+    /// Return null only for a pure container, which describes its bytes by the members tiling
+    /// them rather than by a codec's geometry. A node carries a typed block or members, never
+    /// both -- see BuildMembers.
     /// </summary>
-    protected abstract AssetManifestBlock BuildTypeBlock(RegionAssetExportRequest request);
+    protected virtual AssetManifestBlock BuildTypeBlock(RegionAssetExportRequest request) => null;
+
+    /// <summary>
+    /// Transform stages between the ROM bytes and the buffer the manifest describes, outermost
+    /// first, as the manifest's "pipeline" array (e.g. a decompression stage carrying the mode
+    /// its encoder cannot derive). Null -- the normal case -- omits the key entirely and means
+    /// the ROM bytes ARE the buffer.
+    /// </summary>
+    protected virtual JsonArray BuildPipeline(RegionAssetExportRequest request) => null;
+
+    /// <summary>
+    /// Child node references tiling this asset's buffer, in declaration order, as the manifest's
+    /// "members" array. Null -- the normal case -- makes this a leaf, described by its typed
+    /// block instead. Exactly one of the two is present: a node with both would describe its
+    /// bytes twice, and the two descriptions could disagree.
+    /// </summary>
+    protected virtual JsonArray BuildMembers(RegionAssetExportRequest request) => null;
+
+    /// <summary>
+    /// Layer-relative paths of files this asset's codec reads but the manifest only NAMES
+    /// (e.g. a text asset's character table). Reported so the build can make them implicit deps
+    /// of the extract edge; the exporter is the right place to name them because it is what
+    /// validated the authoring they come from.
+    /// </summary>
+    protected virtual IReadOnlyList<string> BuildSharedFiles(RegionAssetExportRequest request) => [];
+
+    /// <summary>
+    /// What the build has to rebuild for this region. The default is one leaf node -- one
+    /// region, one codec, one output. A container overrides this to report its member nodes too,
+    /// mirroring the "members" it wrote into the manifest.
+    /// </summary>
+    protected virtual IReadOnlyList<AssetBuildNode> BuildNodes(RegionAssetExportRequest request) =>
+    [
+        new AssetBuildNode
+        {
+            Name = RegionAssetUtil.GetAssetName(request.Region),
+            AssetType = RegionAssetUtil.GetAssetType(request.Region),
+            SharedFiles = BuildSharedFiles(request),
+        },
+    ];
 
     /// <summary>
     /// Claim regions whose AssetType carries this exporter's prefix. Virtual because one asset
@@ -66,7 +114,12 @@ public abstract class BinaryAssetExporterBase : IRegionAssetExporter
         region.ExportType == RegionExportType.Asset &&
         region.AssetType?.StartsWith(AssetTypePrefix, StringComparison.Ordinal) == true;
 
-    public string Export(RegionAssetExportRequest request)
+    /// <summary>
+    /// NOT virtual, and must stay that way: the manifest writer below is the determinism
+    /// contract and the key order is pinned by the byte-identity gate, so a subclass must not be
+    /// able to reimplement either. Widen behaviour through the Build* extension points instead.
+    /// </summary>
+    public RegionAssetExportResult Export(RegionAssetExportRequest request)
     {
         // validate before writing anything: a half-written asset tree is worse than none.
         Validate(request);
@@ -76,7 +129,11 @@ public abstract class BinaryAssetExporterBase : IRegionAssetExporter
         var manifestPath = RegionAssetUtil.PrepareOutputPath(request.ManifestRootDir, name, ".json");
         WriteManifest(manifestPath, BuildManifest(request, name));
 
-        return $"incbin \"{request.AssetRefPrefix}/{name}{CompiledExtension}\"";
+        return new RegionAssetExportResult
+        {
+            AsmDirective = $"incbin \"{request.AssetRefPrefix}/{name}{CompiledExtension}\"",
+            BuildNodes = BuildNodes(request),
+        };
     }
 
     /// <summary>
@@ -97,17 +154,34 @@ public abstract class BinaryAssetExporterBase : IRegionAssetExporter
     /// <summary>
     /// Assemble the manifest. The key order here is load-bearing: it is what the codec tools'
     /// `load_manifest` reads and what the byte-identity gate pins, so keep name / type / ver /
-    /// source / &lt;typed block&gt; / options / generated_by in exactly this sequence.
+    /// source / pipeline / &lt;typed block | members&gt; / options / generated_by in exactly this
+    /// sequence. Optional keys are omitted rather than emitted null, so a manifest never grows
+    /// a key that says nothing.
     /// </summary>
     private JsonObject BuildManifest(RegionAssetExportRequest request, string name)
     {
         var region = request.Region;
         var parts = BuildTypeBlock(request);
+        var members = BuildMembers(request);
+
+        // The grammar: a leaf is described by its codec's typed block, a container by the
+        // members tiling its buffer. Both would describe the same bytes twice and be free to
+        // disagree; neither describes them at all.
+        if ((parts == null) == (members == null))
+            throw new InvalidOperationException(
+                $"Region '{region.RegionName}': an asset manifest must carry either a typed block " +
+                $"or a members list, not {(parts == null ? "neither" : "both")}.");
+
+        var typeString = parts?.TypeString ?? RegionAssetUtil.GetAssetType(region);
+        if (string.IsNullOrWhiteSpace(typeString))
+            throw new InvalidOperationException(
+                $"Region '{region.RegionName}' has no asset type. The type is the codec contract " +
+                "the build dispatches on, so it cannot be inferred or left blank.");
 
         var manifest = new JsonObject
         {
             ["name"] = name,
-            ["type"] = parts.TypeString,
+            ["type"] = typeString,
         };
 
         // `ver` omitted means "latest", the default. Only pin it when the project asked for
@@ -116,11 +190,18 @@ public abstract class BinaryAssetExporterBase : IRegionAssetExporter
             manifest["ver"] = region.AssetVersion.Trim();
 
         manifest["source"] = BuildSourceEnvelope(request);
-        manifest[parts.BlockKey] = parts.Block;
+
+        if (BuildPipeline(request) is { } pipeline)
+            manifest["pipeline"] = pipeline;
+
+        if (parts != null)
+            manifest[parts.BlockKey] = parts.Block;
+        else
+            manifest["members"] = members;
 
         // free-form passthrough: the codec owns this vocabulary, Diz only checks it's an
         // object (done at parse time). Anything here wins over the typed block by merge order.
-        if (parts.Options != null)
+        if (parts?.Options != null)
             manifest["options"] = parts.Options.DeepClone();
 
         manifest["generated_by"] = "DiztinGUIsh";

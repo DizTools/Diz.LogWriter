@@ -386,7 +386,7 @@ public class LogCreator : ILogCreatorForGenerator
                 Enabled = hasAssetRegions && !Settings.OutputToString,
                 LogCreator = this,
                 ExportRootDir = projectRootDir,
-                Regions = regions,
+                AssetExportService = assetExportService,
                 GeneratorSettings = mainAsmRelPath == null
                     ? null
                     : new BuildFileGeneratorSettings

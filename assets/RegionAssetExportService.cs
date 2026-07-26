@@ -11,8 +11,16 @@ public interface IRegionAssetExportService
     bool IsAssetRegion(IRegion region);
 
     /// <summary>
-    /// Export a region as an asset and return the assembly directive to emit in its place.
-    /// Returns null if the region isn't an asset region.
+    /// Every build node reported by the regions exported so far, in export order. The build
+    /// file generator reads this after the assembly pass, so it describes exactly what was
+    /// exported rather than what the project's regions imply.
+    /// </summary>
+    IReadOnlyList<AssetBuildNode> ExportedBuildNodes { get; }
+
+    /// <summary>
+    /// Export a region as an asset and return what it produced -- the assembly directive to
+    /// emit in its place, and the build nodes for it. Returns null if the region isn't an
+    /// asset region.
     /// </summary>
     /// <param name="region">the region to export</param>
     /// <param name="manifestRootDir">
@@ -25,7 +33,7 @@ public interface IRegionAssetExportService
     /// build an incbin path that resolves correctly from where the .asm actually lives.
     /// Empty when the .asm sits at the project root.
     /// </param>
-    string ExportRegion(IRegion region, string manifestRootDir, string asmToProjectRootPrefix = "");
+    RegionAssetExportResult ExportRegion(IRegion region, string manifestRootDir, string asmToProjectRootPrefix = "");
 }
 
 public class RegionAssetExportService : IRegionAssetExportService
@@ -49,6 +57,11 @@ public class RegionAssetExportService : IRegionAssetExportService
     // original bytes.
     private readonly string buildAssetDir;
 
+    // accumulated as regions are exported, because only the exporter knows what a region turned
+    // into: reading the graph back off the regions afterwards would parse the same authoring a
+    // second time, and the two readings would be free to disagree.
+    private readonly List<AssetBuildNode> exportedBuildNodes = [];
+
     public RegionAssetExportService(
         IReadOnlyByteSource byteSource,
         ISnesAddressConverter addressConverter,
@@ -64,7 +77,9 @@ public class RegionAssetExportService : IRegionAssetExportService
     public bool IsAssetRegion(IRegion region) =>
         region != null && region.ExportType != RegionExportType.Assembly;
 
-    public string ExportRegion(IRegion region, string manifestRootDir, string asmToProjectRootPrefix = "")
+    public IReadOnlyList<AssetBuildNode> ExportedBuildNodes => exportedBuildNodes;
+
+    public RegionAssetExportResult ExportRegion(IRegion region, string manifestRootDir, string asmToProjectRootPrefix = "")
     {
         if (!IsAssetRegion(region))
             return null;
@@ -82,7 +97,7 @@ public class RegionAssetExportService : IRegionAssetExportService
 
         var (pcOffset, bytes) = ReadRegionBytes(region);
 
-        return exporter.Export(new RegionAssetExportRequest
+        var result = exporter.Export(new RegionAssetExportRequest
         {
             Region = region,
             Bytes = bytes,
@@ -90,6 +105,14 @@ public class RegionAssetExportService : IRegionAssetExportService
             ManifestRootDir = manifestRootDir,
             AssetRefPrefix = JoinAsmPath(asmToProjectRootPrefix, buildAssetDir),
         });
+
+        if (result.BuildNodes == null || result.BuildNodes.Count == 0)
+            throw new InvalidOperationException(
+                $"Region '{region.RegionName}' exported a manifest but reported nothing for the " +
+                "build to rebuild; its bytes would never be recompiled.");
+
+        exportedBuildNodes.AddRange(result.BuildNodes);
+        return result;
     }
 
     /// <summary>

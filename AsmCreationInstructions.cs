@@ -558,14 +558,14 @@ public class AsmCreationInstructions : AsmCreationBase
                 $"PC 0x{startPc:X}-0x{endPc:X}); its bytes can't be read as one run. This happens " +
                 "at a LoROM bank seam -- split the region so it doesn't cross one.");
 
-        var directive = AssetExportService.ExportRegion(
+        var exported = AssetExportService.ExportRegion(
             region, AssetManifestRootDir, AssetAsmToProjectRootPrefix);
-        if (directive == null)
+        if (exported == null)
             return false;
 
         LogCreator.WriteEmptyLine();
         LogCreator.WriteHeaderForNewlyIncludedFile(offset, "asset", region.RegionName, length);
-        LogCreator.WriteLine(directive);
+        LogCreator.WriteLine(exported.AsmDirective);
         LogCreator.WriteEmptyLine();
 
         exportedAssetRegions.Add(region.RegionName);

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Diz.Core.Interfaces;
 
 namespace Diz.LogWriter.assets;
@@ -24,10 +25,29 @@ public interface IRegionAssetExporter
     bool CanExport(IRegion region);
 
     /// <summary>
-    /// Write the manifest describing this asset and return the assembly directive line to
-    /// emit in place of the region's inline bytes.
+    /// Write the manifest describing this asset, and report both what the assembly writer must
+    /// emit in place of the region's inline bytes and what the build has to rebuild.
     /// </summary>
-    string Export(RegionAssetExportRequest request);
+    RegionAssetExportResult Export(RegionAssetExportRequest request);
+}
+
+/// <summary>
+/// What one region's export produced. The assembly directive and the build graph come out of
+/// the same call because they describe the same asset: the exporter already parsed the region's
+/// options to write the manifest, so re-deriving the build graph from the region afterwards
+/// would be a second, independently-drifting reading of the same authoring.
+/// </summary>
+public sealed class RegionAssetExportResult
+{
+    /// <summary>
+    /// The assembly line emitted in place of the region's bytes. Exactly one line, whatever
+    /// the node structure underneath: a region occupies one contiguous span, so it contributes
+    /// one directive.
+    /// </summary>
+    public string AsmDirective { get; init; }
+
+    /// <summary>What the build must extract and recompile for this region. Never empty.</summary>
+    public IReadOnlyList<AssetBuildNode> BuildNodes { get; init; } = [];
 }
 
 /// <summary>
