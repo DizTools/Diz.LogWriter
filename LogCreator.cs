@@ -260,13 +260,23 @@ public class LogCreator : ILogCreatorForGenerator
                 Path.Combine(asmOutputRelDir, RegionAssetExportService.AssetSubDir));
         }
 
+        // the leaf exporters: one region, one codec, one output.
+        IRegionAssetExporter[] leafAssetExporters =
+        [
+            new BinaryRegionAssetExporter(), new GfxRegionAssetExporter(),
+            new BrrRegionAssetExporter(), new TextRegionAssetExporter(),
+        ];
+
         var assetExportService = hasAssetRegions
             ? new RegionAssetExportService(
                 Data,                       // ILogCreatorDataSource is an IReadOnlyByteSource
                 Data,                       //   ...and an ISnesAddressConverter
                 [
-                    new BinaryRegionAssetExporter(), new GfxRegionAssetExporter(),
-                    new BrrRegionAssetExporter(), new TextRegionAssetExporter(),
+                    ..leafAssetExporters,
+                    // a container packs several assets into one region, and exports each of them
+                    // through the very same leaf exporters -- so a packed asset and a standalone
+                    // one are described identically, and only their provenance differs.
+                    new ContainerRegionAssetExporter(leafAssetExporters),
                 ],
                 Settings.BuildDirPath)
             : null;

@@ -210,19 +210,37 @@ public abstract class BinaryAssetExporterBase : IRegionAssetExporter
     }
 
     /// <summary>
-    /// The `source` envelope: where the bytes came from and their hash. Identical across every
-    /// asset type, and load-bearing -- it is what the build's `extract` step slices the ROM
-    /// with, and the hash is what catches someone building against the wrong ROM. Key
-    /// names/format must match what the codec tools read ("snes_addr", not "snes_address").
+    /// The `source` envelope: where the bytes came from and their hash. Load-bearing -- it is what
+    /// the build's `extract` step slices the ROM with, and the hash is what catches someone
+    /// building against the wrong ROM. Key names/format must match what the codec tools read
+    /// ("snes_addr", not "snes_address").
+    ///
+    /// Two shapes, because there are two ways an asset's bytes can be located. A range of the ROM
+    /// records where in the ROM it is. An asset that is one member of a container has no ROM
+    /// offset -- its bytes only exist after the container is unpacked -- so it records which
+    /// container and where inside it instead, and the hash covers the unpacked bytes. Omitting
+    /// rom_offset is what tells the codecs not to try to compare it against the cartridge.
+    ///
+    /// The hash is never optional in either shape. It is the only thing standing between "the
+    /// build decoded some bytes" and "the build decoded THESE bytes", and the codecs refuse to
+    /// decode a manifest that claims provenance without it.
     /// </summary>
     private static JsonObject BuildSourceEnvelope(RegionAssetExportRequest request) =>
-        new()
-        {
-            ["rom_offset"] = $"0x{request.PcOffset:X}",
-            ["length"] = request.Bytes.Length,
-            ["source_sha256"] = RegionAssetUtil.Sha256Hex(request.Bytes),
-            ["snes_addr"] = $"0x{request.Region.StartSnesAddress:X6}",
-        };
+        request.Member is { } member
+            ? new JsonObject
+            {
+                ["length"] = member.Length,
+                ["source_sha256"] = member.Sha256,
+                ["member_of"] = member.ContainerName,
+                ["at"] = member.At,
+            }
+            : new JsonObject
+            {
+                ["rom_offset"] = $"0x{request.PcOffset:X}",
+                ["length"] = request.Bytes.Length,
+                ["source_sha256"] = RegionAssetUtil.Sha256Hex(request.Bytes),
+                ["snes_addr"] = $"0x{request.Region.StartSnesAddress:X6}",
+            };
 }
 
 /// <summary>

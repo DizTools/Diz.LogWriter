@@ -17,9 +17,14 @@ public class ToolVendoring
     public const string VendorDir = "tools/vendor/dizpack";
 
     // Hand-authored, game-specific tools live here and are NEVER touched by export.
-    // Searched BEFORE the vendor dir, so a project can override a stock codec without
-    // forking Diz.
+    // Reserved for a per-project override of a stock codec.
     public const string GameToolsDir = "tools/game";
+
+    // Source tree of the game-specific tool sets shipped with Diz, one sub-directory per key,
+    // as a SIBLING of the shared codecs rather than inside them. A codec for one game's
+    // compression format has no business shipping into every other game's repo, and putting it
+    // in the shared dir is exactly what would make that happen.
+    public const string GameToolsSourceDir = "dizpack-game";
 
     // Sentinel files that identify a real dizpack source dir during the walk-up. NOT the full
     // vendoring list -- the set of codecs to ship is DISCOVERED (see DiscoverToolFiles) so a
@@ -99,6 +104,68 @@ public class ToolVendoring
         }
 
         WriteReadme(destDir);
+        return written;
+    }
+
+    /// <summary>
+    /// The source directory of one game-specific tool set, or null if Diz's tools can't be
+    /// located at all. Sits beside the shared codecs, keyed by name.
+    /// </summary>
+    public static string FindSourceGameToolsDir(string gameToolKey, string sourceToolsDir = null)
+    {
+        sourceToolsDir ??= FindSourceToolsDir();
+        var parent = sourceToolsDir == null ? null : Path.GetDirectoryName(sourceToolsDir);
+        return parent == null
+            ? null
+            : Path.Combine(parent, GameToolsSourceDir, gameToolKey);
+    }
+
+    /// <summary>
+    /// Copy in the game-specific tool sets the generated build actually references, and only
+    /// those. A project whose assets need none gets nothing -- not an empty directory, not a
+    /// stray README -- because a vendored tool that nothing invokes is indistinguishable from
+    /// one that has quietly stopped being invoked.
+    ///
+    /// The whole key directory is copied rather than the individual scripts the build names by
+    /// path: a codec is free to be split across files, and shipping only the entry point would
+    /// leave an import to fail at build time in the exported repo, far from the cause.
+    /// </summary>
+    public IReadOnlyList<string> VendorGameToolsInto(
+        string exportRootDir, IEnumerable<string> gameToolKeys, string sourceToolsDir = null)
+    {
+        var keys = (gameToolKeys ?? [])
+            .Where(k => !string.IsNullOrWhiteSpace(k))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(k => k, StringComparer.Ordinal)
+            .ToList();
+
+        // No tools shipped anywhere (a dev build run from an unusual layout) already means
+        // "vendor nothing"; keep that, rather than turning it into a new way for export to fail.
+        if (keys.Count == 0 || (sourceToolsDir ??= FindSourceToolsDir()) == null)
+            return [];
+
+        var destDir = Path.Combine(
+            exportRootDir, BuildStageBindings.VendorDir.Replace('/', Path.DirectorySeparatorChar));
+
+        var written = new List<string>();
+        foreach (var key in keys)
+        {
+            var src = FindSourceGameToolsDir(key, sourceToolsDir);
+            if (src == null || !Directory.Exists(src))
+                throw new InvalidOperationException(
+                    $"The build references the '{key}' tool set, but it is not present at " +
+                    $"'{src}'. The generated build names those scripts by path, so exporting " +
+                    "without them would produce a repo that cannot build.");
+
+            Directory.CreateDirectory(destDir);
+            foreach (var file in DiscoverToolFiles(src))
+            {
+                var dest = Path.Combine(destDir, file);
+                File.Copy(Path.Combine(src, file), dest, overwrite: true);
+                written.Add(dest);
+            }
+        }
+
         return written;
     }
 

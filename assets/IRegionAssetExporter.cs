@@ -60,8 +60,26 @@ public class RegionAssetExportRequest
     /// <summary>The region being exported.</summary>
     public IRegion Region { get; init; }
 
-    /// <summary>The region's raw bytes, already read out of the ROM.</summary>
+    /// <summary>
+    /// The region's raw bytes, already read out of the ROM. Null for a container member: its
+    /// bytes only exist after the container's transform pipeline has run, which is a build-time
+    /// operation. Use <see cref="ByteLength"/> for anything that only needs the size.
+    /// </summary>
     public byte[] Bytes { get; init; }
+
+    /// <summary>
+    /// Where this asset's bytes sit inside a larger buffer, when it is one member of a container
+    /// rather than a range of the ROM. Null -- the normal case -- means the bytes came straight
+    /// from the ROM and <see cref="Bytes"/> holds them.
+    /// </summary>
+    public AssetMemberContext Member { get; init; }
+
+    /// <summary>
+    /// How many bytes this asset occupies. Every size-derived manifest field (tile counts, record
+    /// counts, block-alignment checks) reads this rather than the byte array, so an asset whose
+    /// bytes are not available until build time is described exactly like one whose are.
+    /// </summary>
+    public int ByteLength => Bytes?.Length ?? Member?.Length ?? 0;
 
     /// <summary>PC/file offset the bytes came from (recorded in the manifest for traceability).</summary>
     public int PcOffset { get; init; }
@@ -79,4 +97,32 @@ public class RegionAssetExportRequest
     /// nothing Diz writes is what gets incbin'd.
     /// </summary>
     public string AssetRefPrefix { get; init; }
+}
+
+/// <summary>
+/// An asset's place inside a container's buffer, and the proof of what its bytes are.
+///
+/// A member has no ROM offset of its own: the bytes it describes only exist once the container
+/// has been sliced out of the ROM and its transform pipeline has run. So its provenance is
+/// recorded differently -- the container it belongs to, the offset within that container's
+/// buffer, the length, and the hash of the decompressed bytes.
+///
+/// The hash is AUTHORED alongside the offset and length rather than computed here, because the
+/// bytes it covers are exactly the ones no part of this program can see. That makes it an
+/// independent claim about what the pipeline must produce: the build hashes the real bytes and
+/// halts if they disagree, which is a check a self-computed hash could never fail.
+/// </summary>
+public sealed class AssetMemberContext
+{
+    /// <summary>Logical name of the container this is a member of, e.g. "blob/font_pack".</summary>
+    public string ContainerName { get; init; }
+
+    /// <summary>Offset of this member's first byte within the container's buffer.</summary>
+    public int At { get; init; }
+
+    /// <summary>Length of this member in bytes.</summary>
+    public int Length { get; init; }
+
+    /// <summary>Lowercase hex sha256 of this member's bytes as they appear in the buffer.</summary>
+    public string Sha256 { get; init; }
 }

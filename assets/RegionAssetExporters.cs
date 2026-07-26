@@ -121,7 +121,7 @@ public class BinaryRegionAssetExporter : BinaryAssetExporterBase
     {
         // no structure to check -- any byte is a valid byte -- but an empty region describes
         // nothing and would produce a manifest whose source slice is zero-length.
-        if (request.Bytes.Length == 0)
+        if (request.ByteLength == 0)
             throw new InvalidOperationException(
                 $"Region '{request.Region.RegionName}' is empty; a binary asset needs at least one byte.");
     }
@@ -157,7 +157,7 @@ public class GfxRegionAssetExporter : BinaryAssetExporterBase
     {
         var region = request.Region;
         var (bpp, cellHeight, cellSize, _) = ComputeLayout(region);
-        var length = request.Bytes.Length;
+        var length = request.ByteLength;
 
         if (length == 0 || length % cellSize != 0)
         {
@@ -180,7 +180,7 @@ public class GfxRegionAssetExporter : BinaryAssetExporterBase
     {
         var region = request.Region;
         var (bpp, cellHeight, cellSize, options) = ComputeLayout(region);
-        var tiles = request.Bytes.Length / cellSize;
+        var tiles = request.ByteLength / cellSize;
 
         var gfx = new JsonObject
         {
@@ -306,7 +306,7 @@ public class BrrRegionAssetExporter : BinaryAssetExporterBase
 
     protected override void Validate(RegionAssetExportRequest request)
     {
-        var length = request.Bytes.Length;
+        var length = request.ByteLength;
 
         // BRR (SNES ADPCM) is a stream of 9-byte blocks (1 header + 8 data). Anything not a
         // whole number of blocks is a mis-drawn region -- fail LOUDLY naming it, rather than
@@ -370,7 +370,7 @@ public class TextRegionAssetExporter : BinaryAssetExporterBase
     {
         var region = request.Region;
         var recordWidth = GetRecordWidth(ParseAssetOptions(region), region);
-        var length = request.Bytes.Length;
+        var length = request.ByteLength;
 
         // Fixed-width records with no terminator: the region must be a whole number of them, or
         // every record past the ragged point is mis-framed. Fail LOUDLY naming the region rather
@@ -398,7 +398,7 @@ public class TextRegionAssetExporter : BinaryAssetExporterBase
         var region = request.Region;
         var options = ParseAssetOptions(region);
         var recordWidth = GetRecordWidth(options, region);
-        var count = request.Bytes.Length / recordWidth;
+        var count = request.ByteLength / recordWidth;
 
         // Key order matches what textpack's `load_manifest` reads, so the tracked manifest
         // stays byte-stable: tbl, count, record_width, pad, [tokens].
