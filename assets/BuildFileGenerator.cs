@@ -618,6 +618,7 @@ public class BuildFileGenerator
         if (stage != null)
         {
             sb.AppendLine($"build {buffer}: {stage.DecodeRule} {stored} | {manifest} ${stage.DecodeToolVar}");
+            sb.AppendLine($"  manifest = {manifest}");
             AppendStageVars(sb, container.Pipeline[0]);
             sb.AppendLine();
         }
@@ -666,6 +667,7 @@ public class BuildFileGenerator
         if (stage != null)
         {
             sb.AppendLine($"build {outBin}: {stage.EncodeRule} {rejoined} | {manifest} ${stage.EncodeToolVar}");
+            sb.AppendLine($"  manifest = {manifest}");
             AppendStageVars(sb, container.Pipeline[0]);
             sb.AppendLine();
         }

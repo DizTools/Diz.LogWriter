@@ -91,6 +91,14 @@ public static class BuildStageBindings
     /// and travels in the manifest. Every other encoder knob is pinned inside the tool and
     /// deliberately absent from the command line, because a forgotten flag would silently produce
     /// plausible wrong bytes.
+    ///
+    /// Both commands are also handed the container's manifest, which every stage edge already
+    /// depends on. That makes the mode's two records -- the one baked into this command line at
+    /// export time and the one in the manifest -- checkable against each other while the build
+    /// runs, so a manifest edited without a re-export halts instead of being silently overridden.
+    /// It also lets the encoder compare what it produced against the bytes the manifest says came
+    /// out of the ROM, and report a rebuilt blob that changed size, whose real consequence would
+    /// otherwise surface much later as an unrelated-looking assembler error.
     /// </summary>
     public static readonly BuildStageBinding CtLzss = new()
     {
@@ -101,12 +109,14 @@ public static class BuildStageBindings
         DecodeRule = "ctlz_decompress",
         DecodeToolVar = "ctlz",
         DecodeToolFile = "ctlz.py",
-        DecodeCommand = "python $ctlz decompress --in $in --out $out --expect-mode $lz_mode",
+        DecodeCommand =
+            "python $ctlz decompress --in $in --out $out --expect-mode $lz_mode --manifest $manifest",
 
         EncodeRule = "ctlz_compress",
         EncodeToolVar = "ctlzpack",
         EncodeToolFile = "ctlzpack.py",
-        EncodeCommand = "python $ctlzpack compress --in $in --out $out --mode $lz_mode",
+        EncodeCommand =
+            "python $ctlzpack compress --in $in --out $out --mode $lz_mode --manifest $manifest",
     };
 
     public static readonly IReadOnlyList<BuildStageBinding> Default = [CtLzss];
