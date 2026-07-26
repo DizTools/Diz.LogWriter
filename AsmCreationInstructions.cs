@@ -23,21 +23,21 @@ public class AsmCreationInstructions : AsmCreationBase
     public bool EnableRegionIncSrc { get; init; } = true;
 
     // Optional: when both are set, regions marked with an ExportType other than 'Assembly'
-    // have their bytes written out as standalone asset files and replaced in the .asm with
-    // an `incbin`. Left null, nothing changes and every region exports inline `db` bytes
-    // exactly as before.
+    // are described by a manifest instead of inline bytes, and replaced in the .asm with an
+    // `incbin` of the build's compiled output. Left null, nothing changes and every region
+    // exports inline `db` bytes exactly as before.
     [CanBeNull] public IRegionAssetExportService AssetExportService { get; init; }
 
-    // PROJECT root, not the assembly output dir -- assets are hand-edited source and must not
-    // live inside the tree that export rewrites.
-    [CanBeNull] public string AssetExportRootDir { get; init; }
+    // Where asset manifests are written: the "assets" folder inside the assembly output dir.
+    // Manifests are generated output and belong in the tree that export rewrites.
+    [CanBeNull] public string AssetManifestRootDir { get; init; }
 
     // relative path from the .asm's directory back to the project root (e.g. ".."), so the
     // emitted incbin resolves from wherever the .asm actually lives.
     public string AssetAsmToProjectRootPrefix { get; init; } = "";
 
     private bool AssetExportEnabled =>
-        AssetExportService != null && !string.IsNullOrEmpty(AssetExportRootDir);
+        AssetExportService != null && !string.IsNullOrEmpty(AssetManifestRootDir);
 
     // regions we've already emitted an incbin for, so a region can't be written twice
     private readonly HashSet<string> exportedAssetRegions = [];
@@ -559,7 +559,7 @@ public class AsmCreationInstructions : AsmCreationBase
                 "at a LoROM bank seam -- split the region so it doesn't cross one.");
 
         var directive = AssetExportService.ExportRegion(
-            region, AssetExportRootDir, AssetAsmToProjectRootPrefix);
+            region, AssetManifestRootDir, AssetAsmToProjectRootPrefix);
         if (directive == null)
             return false;
 

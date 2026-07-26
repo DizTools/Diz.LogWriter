@@ -233,11 +233,14 @@ public class LogCreator : ILogCreatorForGenerator
         var hasAssetRegions = !Settings.OutputToString &&
                               regions.Any(r => r.ExportType != RegionExportType.Assembly);
 
-        // Two different directories; conflating them is a data-loss bug:
+        // Three different directories; conflating them is a data-loss bug:
         //   asmOutputDir   - .asm output (e.g. <project>/generated), REWRITTEN on every export.
-        //   projectRootDir - assets, build.ninja, tools. Assets are hand-edited source and
-        //                    must never sit inside the regenerated tree.
-        string projectRootDir = null, asmOutputDir = null, asmToProjectRoot = "", mainAsmRelPath = null;
+        //   manifestDir    - asset manifests, inside the .asm tree: also generated, also
+        //                    rewritten every export.
+        //   projectRootDir - hand-authored assets, build.ninja, tools. Those are human-owned
+        //                    and must never sit inside the regenerated tree.
+        string projectRootDir = null, asmOutputDir = null, manifestDir = null,
+            asmToProjectRoot = "", mainAsmRelPath = null, manifestRelDir = null;
         if (hasAssetRegions)
         {
             asmOutputDir = Path.GetFullPath(Settings.BuildFullOutputPath());
@@ -245,9 +248,16 @@ public class LogCreator : ILogCreatorForGenerator
                 ? Path.GetFullPath(Settings.BaseOutputPath)
                 : asmOutputDir;
 
+            manifestDir = Path.Combine(asmOutputDir, RegionAssetExportService.AssetSubDir);
+
             asmToProjectRoot = NormalizeRel(Path.GetRelativePath(asmOutputDir, projectRootDir));
-            mainAsmRelPath = NormalizeRel(
-                Path.Combine(Path.GetRelativePath(projectRootDir, asmOutputDir), "main.asm"));
+
+            // normalize first, so that when the .asm sits at the project root these come out
+            // as "main.asm"/"assets" rather than "./main.asm"/"./assets".
+            var asmOutputRelDir = NormalizeRel(Path.GetRelativePath(projectRootDir, asmOutputDir));
+            mainAsmRelPath = NormalizeRel(Path.Combine(asmOutputRelDir, "main.asm"));
+            manifestRelDir = NormalizeRel(
+                Path.Combine(asmOutputRelDir, RegionAssetExportService.AssetSubDir));
         }
 
         var assetExportService = hasAssetRegions
@@ -257,7 +267,8 @@ public class LogCreator : ILogCreatorForGenerator
                 [
                     new BinaryRegionAssetExporter(), new GfxRegionAssetExporter(),
                     new BrrRegionAssetExporter(), new TextRegionAssetExporter(),
-                ])
+                ],
+                Settings.BuildDirPath)
             : null;
 
         Steps =
@@ -275,7 +286,7 @@ public class LogCreator : ILogCreatorForGenerator
 
                 // both null unless the project actually has asset regions
                 AssetExportService = assetExportService,
-                AssetExportRootDir = projectRootDir,
+                AssetManifestRootDir = manifestDir,
                 AssetAsmToProjectRootPrefix = asmToProjectRoot,
             },
             
@@ -378,7 +389,14 @@ public class LogCreator : ILogCreatorForGenerator
                 Regions = regions,
                 GeneratorSettings = mainAsmRelPath == null
                     ? null
-                    : new BuildFileGeneratorSettings { MainAsmPath = mainAsmRelPath },
+                    : new BuildFileGeneratorSettings
+                    {
+                        MainAsmPath = mainAsmRelPath,
+                        ManifestDir = manifestRelDir,
+                        AssetsDir = NormalizeRel(Settings.AssetsDirPath),
+                        ExtractedDir = NormalizeRel(Settings.ExtractedDirPath),
+                        BuildDir = NormalizeRel(Settings.BuildDirPath),
+                    },
             },
         ];
     }

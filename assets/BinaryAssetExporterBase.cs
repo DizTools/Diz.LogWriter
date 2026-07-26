@@ -8,13 +8,18 @@ using Diz.Core.Interfaces;
 namespace Diz.LogWriter.assets;
 
 /// <summary>
-/// Base for asset exporters that write a payload file PLUS a manifest describing how to
-/// decode it. Owns everything shared across asset types: writing the payload bytes verbatim,
-/// building the `source` envelope (rom_offset / length / source_sha256 / snes_addr),
-/// assembling the manifest in a fixed key order, and returning the `incbin` directive.
+/// Base for asset exporters that write a manifest describing how to decode a region's bytes.
+/// Owns everything shared across asset types: building the `source` envelope (rom_offset /
+/// length / source_sha256 / snes_addr), assembling the manifest in a fixed key order, writing
+/// it deterministically, and returning the `incbin` directive.
 ///
-/// Subclasses supply only the type-specific pieces: the payload file extension, a validation
-/// pass, and the manifest's `type` string + typed block (e.g. gfx:{} / audio:{}).
+/// The ROM bytes themselves are NOT copied out. The manifest's `source` block says where they
+/// live and what they hash to, and the build's `extract` step slices them from the ROM on
+/// demand -- so no copy of game data is ever written into the repo, and there is exactly one
+/// authority for what those bytes are (the ROM).
+///
+/// Subclasses supply only the type-specific pieces: the compiled-payload extension, a
+/// validation pass, and the manifest's `type` string + typed block (e.g. gfx:{} / audio:{}).
 ///
 /// Dispatch is by AssetType PREFIX (e.g. "gfx.", "audio."), NOT by the RegionExportType enum:
 /// every manifest-writing asset shares ExportType == Asset, so the enum alone cannot tell gfx
@@ -30,8 +35,12 @@ public abstract class BinaryAssetExporterBase : IRegionAssetExporter
     /// </summary>
     protected abstract string AssetTypePrefix { get; }
 
-    /// <summary>Extension for the payload file, e.g. ".bin" or ".brr".</summary>
-    protected abstract string FileExtension { get; }
+    /// <summary>
+    /// Extension of the COMPILED payload the assembler incbin's, e.g. ".bin". Not the
+    /// editable source extension (.png/.yaml/.brr) -- that lives in the manifest and in the
+    /// build's codec binding.
+    /// </summary>
+    protected abstract string CompiledExtension { get; }
 
     /// <summary>
     /// Reject bytes this asset type cannot represent (e.g. a partial gfx cell, or a BRR blob
@@ -58,15 +67,25 @@ public abstract class BinaryAssetExporterBase : IRegionAssetExporter
 
         var name = RegionAssetUtil.GetAssetName(request.Region);
 
-        var payloadPath = RegionAssetUtil.PrepareOutputPath(request.AssetRootDir, name, FileExtension);
-        File.WriteAllBytes(payloadPath, request.Bytes);
+        var manifestPath = RegionAssetUtil.PrepareOutputPath(request.ManifestRootDir, name, ".json");
+        WriteManifest(manifestPath, BuildManifest(request, name));
 
-        var manifest = BuildManifest(request, name);
-        var manifestPath = RegionAssetUtil.PrepareOutputPath(request.AssetRootDir, name, ".json");
+        return $"incbin \"{request.AssetRefPrefix}/{name}{CompiledExtension}\"";
+    }
+
+    /// <summary>
+    /// Write a manifest byte-deterministically. Manifests may be tracked in git, so the same
+    /// project must produce the same bytes on every machine and every run:
+    ///   - key order is fixed by construction (see BuildManifest),
+    ///   - line endings are forced to LF, never the host's,
+    ///   - numbers are formatted by System.Text.Json, which is always invariant-culture,
+    ///   - UTF-8 with no BOM.
+    /// Any nondeterminism here turns every re-export into diff churn.
+    /// </summary>
+    private static void WriteManifest(string path, JsonObject manifest)
+    {
         var json = manifest.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
-        File.WriteAllText(manifestPath, json + Environment.NewLine, new UTF8Encoding(false));
-
-        return $"incbin \"{request.AssetRefPrefix}/{name}{FileExtension}\"";
+        File.WriteAllText(path, json.Replace("\r\n", "\n") + "\n", new UTF8Encoding(false));
     }
 
     /// <summary>
@@ -105,9 +124,9 @@ public abstract class BinaryAssetExporterBase : IRegionAssetExporter
 
     /// <summary>
     /// The `source` envelope: where the bytes came from and their hash. Identical across every
-    /// asset type. Key names/order/format must match what the codec tools' `extract` writes
-    /// ("snes_addr", not "snes_address") so both authors produce the same schema. Keeping this
-    /// in the base makes Diz the single author of that envelope.
+    /// asset type, and load-bearing -- it is what the build's `extract` step slices the ROM
+    /// with, and the hash is what catches someone building against the wrong ROM. Key
+    /// names/format must match what the codec tools read ("snes_addr", not "snes_address").
     /// </summary>
     private static JsonObject BuildSourceEnvelope(RegionAssetExportRequest request) =>
         new()

@@ -15,51 +15,56 @@ public interface IRegionAssetExportService
     /// Returns null if the region isn't an asset region.
     /// </summary>
     /// <param name="region">the region to export</param>
-    /// <param name="projectRootDir">
-    /// The PROJECT root, not the assembly output dir. Assets are hand-edited source and must
-    /// live outside the generated tree -- that directory gets rewritten on every export, so
-    /// a PNG stored there would be someone's artwork sitting in a folder documented as safe
-    /// to delete.
+    /// <param name="manifestRootDir">
+    /// Where asset manifests are written: the "assets" folder inside the assembly output dir.
+    /// Manifests are generated output -- rewritten on every export -- so they belong in the
+    /// same tree as the .asm, not next to anything hand-edited.
     /// </param>
     /// <param name="asmToProjectRootPrefix">
     /// Relative path from the .asm's directory back to the project root (e.g. ".."), used to
     /// build an incbin path that resolves correctly from where the .asm actually lives.
     /// Empty when the .asm sits at the project root.
     /// </param>
-    string ExportRegion(IRegion region, string projectRootDir, string asmToProjectRootPrefix = "");
+    string ExportRegion(IRegion region, string manifestRootDir, string asmToProjectRootPrefix = "");
 }
 
 public class RegionAssetExportService : IRegionAssetExportService
 {
-    // where source assets land, relative to the project root. this is the BASE layer of the
-    // override search path: it must always be complete, because mod layers are allowed to
-    // be sparse and fall through to it.
-    public const string BaseAssetLayer = "assets/src";
+    /// <summary>
+    /// Sub-folder that holds assets inside a tier directory: manifests at
+    /// &lt;generated&gt;/assets, compiled payloads at &lt;build&gt;/assets.
+    /// </summary>
+    public const string AssetSubDir = "assets";
 
-    // where the BUILD writes recompiled asset bytes -- what the .asm incbin's, NOT the .bin
-    // in the source layer. The source-layer .bin is only a seed (gfxpack turns it into a
-    // PNG once; the PNG is then canonical). If the .asm incbin'd the seed, PNG edits would
-    // compile to a file nothing reads and the ROM would silently keep the original bytes.
-    public const string BuildAssetDir = "build/assets";
+    /// <summary>Default build tier name; see LogWriterSettings.BuildDirPath.</summary>
+    public const string DefaultBuildDir = "build";
 
     private readonly IReadOnlyByteSource byteSource;
     private readonly ISnesAddressConverter addressConverter;
     private readonly IReadOnlyList<IRegionAssetExporter> exporters;
 
+    // Where the BUILD writes recompiled asset bytes -- what the .asm incbin's. Diz never
+    // writes here: it only names the path. If the .asm pointed at an editable source instead,
+    // edits would compile to a file nothing reads and the ROM would silently keep the
+    // original bytes.
+    private readonly string buildAssetDir;
+
     public RegionAssetExportService(
         IReadOnlyByteSource byteSource,
         ISnesAddressConverter addressConverter,
-        IEnumerable<IRegionAssetExporter> exporters)
+        IEnumerable<IRegionAssetExporter> exporters,
+        string buildDir = DefaultBuildDir)
     {
         this.byteSource = byteSource;
         this.addressConverter = addressConverter;
         this.exporters = exporters.ToList();
+        buildAssetDir = $"{(buildDir ?? DefaultBuildDir).Replace('\\', '/').Trim('/')}/{AssetSubDir}";
     }
 
     public bool IsAssetRegion(IRegion region) =>
         region != null && region.ExportType != RegionExportType.Assembly;
 
-    public string ExportRegion(IRegion region, string projectRootDir, string asmToProjectRootPrefix = "")
+    public string ExportRegion(IRegion region, string manifestRootDir, string asmToProjectRootPrefix = "")
     {
         if (!IsAssetRegion(region))
             return null;
@@ -82,8 +87,12 @@ public class RegionAssetExportService : IRegionAssetExportService
             Region = region,
             Bytes = bytes,
             PcOffset = pcOffset,
-            AssetRootDir = Path.Combine(projectRootDir, BaseAssetLayer.Replace('/', Path.DirectorySeparatorChar)),
-            AssetRefPrefix = JoinAsmPath(asmToProjectRootPrefix, BuildAssetDir),
+            ManifestRootDir = manifestRootDir,
+            AssetRefPrefix = JoinAsmPath(asmToProjectRootPrefix, buildAssetDir),
+
+            // the manifest dir sits inside the .asm's own output tree, so from where the
+            // .asm lives it is reached without walking back to the project root.
+            ManifestRefPrefix = AssetSubDir,
         });
     }
 

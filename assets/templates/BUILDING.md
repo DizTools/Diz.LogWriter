@@ -32,11 +32,26 @@ ninja verify
 This rebuilds and compares the result byte-for-byte against the original ROM
 configured in `build-config.ninja`.
 
+## Where the files come from
+
+Nothing in this repo copies the game's data around. The build decodes it out of
+your original ROM on demand:
+
+```
+ninja extract
+```
+
+writes editable sources into `extracted/` -- PNGs for graphics, YAML for text.
+The ordinary build does this for you; the target just lets you ask for the
+sources without assembling a ROM.
+
 ## Editing graphics
 
-Editable graphics are the PNG files under `assets/src/`. Edit them in any image
-editor that keeps them in indexed/palette mode, then build again -- the build
-picks up PNG changes automatically.
+Edit the PNG files under `extracted/` in any image editor that keeps them in
+indexed/palette mode, then build again -- the build picks up PNG changes
+automatically.
 
-If any PNGs are missing (e.g. right after an export), run `ninja seed` to
-create them.
+`extracted/` is rewritten from the ROM whenever the exported manifests change,
+so it is not the place to keep work you want to keep. To own an edit, copy the
+asset into a layer of your own under `mods/` and point `mod_roots` in
+`build-config.ninja` at it.

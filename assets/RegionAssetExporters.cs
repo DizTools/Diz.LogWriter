@@ -66,7 +66,10 @@ public static class RegionAssetUtil
 
 /// <summary>
 /// Plain binary export: write the bytes to a .bin and emit `incbin`.
-/// No interpretation of the contents at all.
+/// No interpretation of the contents at all, and no manifest -- so, unlike the
+/// manifest-writing asset types, there is no codec and nothing in the build that could
+/// reproduce these bytes. That makes this exporter their only producer, so it writes the
+/// .bin into the generated tree (beside the manifests) and points the incbin straight at it.
 /// </summary>
 public class BinaryRegionAssetExporter : IRegionAssetExporter
 {
@@ -75,23 +78,24 @@ public class BinaryRegionAssetExporter : IRegionAssetExporter
     public string Export(RegionAssetExportRequest request)
     {
         var name = RegionAssetUtil.GetAssetName(request.Region);
-        var binPath = RegionAssetUtil.PrepareOutputPath(request.AssetRootDir, name, ".bin");
+        var binPath = RegionAssetUtil.PrepareOutputPath(request.ManifestRootDir, name, ".bin");
         File.WriteAllBytes(binPath, request.Bytes);
-        return $"incbin \"{request.AssetRefPrefix}/{name}.bin\"";
+        return $"incbin \"{RegionAssetExportService.JoinAsmPath(request.ManifestRefPrefix, $"{name}.bin")}\"";
     }
 }
 
 /// <summary>
-/// Asset export: write the raw .bin AND a manifest describing how to decode it, so an
-/// external tool can turn it into an editable PNG and back.
+/// Asset export: write a manifest describing where the bytes are and how to decode them, so
+/// an external tool can turn them into an editable PNG and back.
 ///
-/// The .bin is what the assembler consumes, so the build stays correct even before anyone
-/// runs the codec tool; the PNG is generated from the .bin as a separate, later step.
+/// The bytes are not copied out here. The build's `extract` step slices them from the ROM
+/// using this manifest and decodes them into an editable PNG; compiling that PNG produces
+/// the .bin the assembler incbin's.
 /// </summary>
 public class GfxRegionAssetExporter : BinaryAssetExporterBase
 {
     protected override string AssetTypePrefix => "gfx.";
-    protected override string FileExtension => ".bin";
+    protected override string CompiledExtension => ".bin";
 
     // must match gfxpack's default (--layout-width). the manifest records it explicitly
     // anyway, so the two can't silently disagree.
@@ -222,13 +226,14 @@ public class GfxRegionAssetExporter : BinaryAssetExporterBase
 ///
 /// BRR needs NO codec: a .brr file IS the raw ADPCM stream, so the round-trip is a verbatim
 /// byte copy handled by the vendored `binpack.py`, not a planar encoder. What Diz writes here
-/// is the same shape as gfx: a verbatim `.bin` SEED plus a manifest. `binpack seed` turns the
-/// seed into the editable `.brr` payload (the manifest's `audio.ext` tells it which extension);
-/// `binpack compile` turns that `.brr` back into `build/assets/audio/&lt;name&gt;.bin`, which is
-/// what the assembler `incbin`s. So FileExtension is ".bin" here (the seed + incbin target),
-/// NOT ".brr" -- ".brr" is the EDITABLE-source extension, carried by the manifest's `audio.ext`
-/// block and the audio BuildToolBinding.SourceExtension. This mirrors gfx exactly, where
-/// FileExtension is ".bin" and the editable extension (".png") lives in the binding.
+/// is the same shape as gfx: a manifest, and nothing else. `binpack extract` slices the ROM
+/// per that manifest into the editable `.brr` payload (the manifest's `audio.ext` tells it
+/// which extension); `binpack compile` turns that `.brr` back into
+/// `build/assets/audio/&lt;name&gt;.bin`, which is what the assembler `incbin`s. So
+/// CompiledExtension is ".bin" here, NOT ".brr" -- ".brr" is the EDITABLE-source extension,
+/// carried by the manifest's `audio.ext` block and the audio BuildToolBinding.SourceExtension.
+/// This mirrors gfx exactly, where CompiledExtension is ".bin" and the editable extension
+/// (".png") lives in the binding.
 ///
 /// The asset region covers ONLY the BRR stream itself. Some games store each sample with a
 /// small length/header prefix immediately before the BRR stream; that prefix belongs to the
@@ -240,11 +245,11 @@ public class BrrRegionAssetExporter : BinaryAssetExporterBase
 {
     protected override string AssetTypePrefix => "audio.";
 
-    // the SEED + incbin-target extension (see class doc). NOT the editable extension.
-    protected override string FileExtension => ".bin";
+    // the incbin-target extension (see class doc). NOT the editable extension.
+    protected override string CompiledExtension => ".bin";
 
-    // the editable payload's extension: what `binpack` compiles from. Recorded in the manifest
-    // so the vendored codec resolves it without the ninja rule having to pass --ext.
+    // the editable payload's extension: what `binpack` extracts to and compiles from. Recorded
+    // in the manifest so the vendored codec resolves it without the ninja rule passing --ext.
     private const string EditableExtension = ".brr";
 
     protected override void Validate(RegionAssetExportRequest request)
@@ -271,8 +276,8 @@ public class BrrRegionAssetExporter : BinaryAssetExporterBase
             TypeString = request.Region.AssetType,
             BlockKey = "audio",
 
-            // matches what `binpack extract` writes for a verbatim asset: the block records only
-            // the editable extension. binpack reads `audio.ext` to find the .brr payload.
+            // the block records only the editable extension; binpack reads `audio.ext` to know
+            // what to extract to and what to compile from.
             Block = new JsonObject { ["ext"] = EditableExtension },
 
             // BRR has no option vocabulary Diz interprets; leave options off entirely (the base
@@ -287,12 +292,12 @@ public class BrrRegionAssetExporter : BinaryAssetExporterBase
 /// Dispatched by the "text." AssetType prefix (BinaryAssetExporterBase.CanExport), exactly like
 /// gfx is by "gfx." and BRR by "audio.".
 ///
-/// Like gfx and BRR, Diz writes a verbatim `.bin` SEED plus a manifest and never decodes the
-/// text itself. The vendored `textpack.py` turns the seed into an editable `.yaml`
-/// (`textpack seed`) and that `.yaml` back into `build/assets/text/&lt;name&gt;.bin`
-/// (`textpack compile`), which the assembler `incbin`s. So FileExtension is ".bin" (the seed +
-/// incbin target), NOT ".yaml" -- the editable extension lives in the text BuildToolBinding,
-/// mirroring gfx (.png) and BRR (.brr).
+/// Like gfx and BRR, Diz writes only a manifest and never decodes the text itself. The
+/// vendored `textpack.py` slices the ROM per that manifest into an editable `.yaml`
+/// (`textpack extract`) and turns that `.yaml` back into `build/assets/text/&lt;name&gt;.bin`
+/// (`textpack compile`), which the assembler `incbin`s. So CompiledExtension is ".bin", NOT
+/// ".yaml" -- the editable extension lives in the text BuildToolBinding, mirroring gfx (.png)
+/// and BRR (.brr).
 ///
 /// The type-specific manifest fields Diz cannot derive from the bytes -- the character table
 /// (`tbl`), the record width, the pad byte, and the named-token map (equipment icons / control
@@ -306,8 +311,8 @@ public class TextRegionAssetExporter : BinaryAssetExporterBase
 {
     protected override string AssetTypePrefix => "text.";
 
-    // the SEED + incbin-target extension (see class doc). NOT the editable ".yaml".
-    protected override string FileExtension => ".bin";
+    // the incbin-target extension (see class doc). NOT the editable ".yaml".
+    protected override string CompiledExtension => ".bin";
 
     protected override void Validate(RegionAssetExportRequest request)
     {
@@ -332,8 +337,8 @@ public class TextRegionAssetExporter : BinaryAssetExporterBase
         var recordWidth = GetRecordWidth(options, region);
         var count = request.Bytes.Length / recordWidth;
 
-        // Key order matches what textpack's `extract` writes and `load_manifest` reads, so the
-        // tracked manifest stays byte-stable: tbl, count, record_width, pad, [tokens].
+        // Key order matches what textpack's `load_manifest` reads, so the tracked manifest
+        // stays byte-stable: tbl, count, record_width, pad, [tokens].
         var text = new JsonObject
         {
             ["tbl"] = GetRequiredString(options, "tbl", region),

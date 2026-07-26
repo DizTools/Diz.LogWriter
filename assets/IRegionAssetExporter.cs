@@ -3,12 +3,13 @@ using Diz.Core.Interfaces;
 namespace Diz.LogWriter.assets;
 
 /// <summary>
-/// Writes a region's raw bytes out as a standalone asset (a .bin, plus optionally a
-/// manifest describing how to decode it), and tells the assembly writer what directive
-/// to emit in place of the usual inline `db` bytes.
+/// Describes a region as a standalone asset -- normally by writing a manifest saying where
+/// its bytes live in the ROM and how to decode them -- and tells the assembly writer what
+/// directive to emit in place of the usual inline `db` bytes.
 ///
-/// Deliberately NOT responsible for pixel/palette encoding. Diz writes raw bytes and a
-/// manifest; an external, vendored tool (gfxpack) owns every codec. Keeping exactly one
+/// Deliberately NOT responsible for pixel/palette encoding, and it does not copy the ROM
+/// bytes out either: the build slices them straight from the ROM using the manifest. An
+/// external, vendored tool (gfxpack and friends) owns every codec. Keeping exactly one
 /// implementation of each codec is what makes byte-identical round-trips checkable --
 /// a second copy inside Diz would be a second thing to drift.
 /// </summary>
@@ -23,8 +24,8 @@ public interface IRegionAssetExporter
     bool CanExport(IRegion region);
 
     /// <summary>
-    /// Write the asset files for <paramref name="region"/> into <paramref name="outputDir"/>.
-    /// Returns the assembly directive line to emit in place of the region's inline bytes.
+    /// Write whatever files describe this asset (normally just its manifest) and return the
+    /// assembly directive line to emit in place of the region's inline bytes.
     /// </summary>
     string Export(RegionAssetExportRequest request);
 }
@@ -45,13 +46,24 @@ public class RegionAssetExportRequest
     /// <summary>PC/file offset the bytes came from (recorded in the manifest for traceability).</summary>
     public int PcOffset { get; init; }
 
-    /// <summary>Root directory assets are written under, e.g. "&lt;export&gt;/assets/src".</summary>
-    public string AssetRootDir { get; init; }
+    /// <summary>
+    /// Root directory manifests are written under, e.g. "&lt;project&gt;/generated/assets".
+    /// Generated output: rewritten on every export, never hand-edited.
+    /// </summary>
+    public string ManifestRootDir { get; init; }
 
     /// <summary>
-    /// Path prefix used inside the emitted assembly directive, relative to where the .asm
-    /// lives, e.g. "assets/src". Kept separate from <see cref="AssetRootDir"/> because the
-    /// on-disk path and the path the assembler sees are not always the same string.
+    /// Path prefix used inside the emitted assembly directive for COMPILED asset payloads,
+    /// relative to where the .asm lives, e.g. "../build/assets". Kept separate from the
+    /// on-disk roots because the path the assembler sees is not the path Diz writes to --
+    /// nothing Diz writes is what gets incbin'd.
     /// </summary>
     public string AssetRefPrefix { get; init; }
+
+    /// <summary>
+    /// Path prefix, relative to where the .asm lives, of <see cref="ManifestRootDir"/>. Only
+    /// needed by asset kinds that have no codec step and are therefore incbin'd straight out
+    /// of the generated tree.
+    /// </summary>
+    public string ManifestRefPrefix { get; init; }
 }
