@@ -34,6 +34,24 @@ public static class RegionAssetUtil
         return full;
     }
 
+    /// <summary>
+    /// Asset type of a region that declares none: a verbatim byte range with no interpretation,
+    /// handled by the generic passthrough codec. The dotted head ("raw") is also the manifest's
+    /// typed-block key, which is how the codec finds it.
+    /// </summary>
+    public const string RawAssetType = "raw.bin";
+
+    /// <summary>
+    /// The manifest "type" for a region. Plain-binary regions have no AssetType to author -- the
+    /// field only exists for typed assets -- so they resolve to <see cref="RawAssetType"/>.
+    /// Returns null for a typed asset region with no type, so that stays a loud failure rather
+    /// than quietly becoming a raw blob.
+    /// </summary>
+    public static string GetAssetType(IRegion region) =>
+        !string.IsNullOrWhiteSpace(region.AssetType) ? region.AssetType
+        : region.ExportType == RegionExportType.Binary ? RawAssetType
+        : null;
+
     public static string Sha256Hex(byte[] bytes) =>
         Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
 
@@ -65,23 +83,56 @@ public static class RegionAssetUtil
 }
 
 /// <summary>
-/// Plain binary export: write the bytes to a .bin and emit `incbin`.
-/// No interpretation of the contents at all, and no manifest -- so, unlike the
-/// manifest-writing asset types, there is no codec and nothing in the build that could
-/// reproduce these bytes. That makes this exporter their only producer, so it writes the
-/// .bin into the generated tree (beside the manifests) and points the incbin straight at it.
+/// Plain binary export: a verbatim byte range with no interpretation of the contents at all.
+///
+/// This is an ordinary asset, not a special case: it writes a manifest and nothing else, exactly
+/// like gfx / BRR / text, and the bytes are extracted from the ROM and recompiled by the same
+/// generic passthrough codec BRR uses (`binpack`). Nothing is written into the generated tree
+/// but the manifest, so a raw region can be extracted, forked, overridden by a mod layer, and
+/// regression-tested by the build like every other asset.
+///
+/// It is reached two ways, which is why it widens the base's prefix dispatch. Setting a region's
+/// export type to plain binary is the UI affordance: such a region carries no AssetType (that
+/// field is only authored for typed assets), so the type "raw.bin" is synthesized for it. Naming
+/// the type explicitly on a typed asset region works too and routes here identically.
+///
+/// The editable source is the raw bytes themselves, so its extension is ".bin" -- the same as
+/// CompiledExtension. Those are different files in different tiers (extracted/&lt;name&gt;.bin
+/// vs build/assets/&lt;name&gt;.bin), so there is no collision; the round trip is a byte copy.
 /// </summary>
-public class BinaryRegionAssetExporter : IRegionAssetExporter
+public class BinaryRegionAssetExporter : BinaryAssetExporterBase
 {
-    public bool CanExport(IRegion region) => region.ExportType == RegionExportType.Binary;
+    protected override string AssetTypePrefix => "raw.";
 
-    public string Export(RegionAssetExportRequest request)
+    protected override string CompiledExtension => ".bin";
+
+    // what `binpack extract` decodes to and `binpack compile` reads back, recorded in the
+    // manifest so the ninja rules pass no --ext. Identical to the compiled extension here
+    // because a verbatim asset has no lossy editable view.
+    private const string EditableExtension = ".bin";
+
+    // plain-binary regions have no AssetType, so the base's prefix dispatch cannot see them;
+    // claim the export type directly and let the base handle an explicitly-typed "raw." asset.
+    public override bool CanExport(IRegion region) =>
+        region.ExportType == RegionExportType.Binary || base.CanExport(region);
+
+    protected override void Validate(RegionAssetExportRequest request)
     {
-        var name = RegionAssetUtil.GetAssetName(request.Region);
-        var binPath = RegionAssetUtil.PrepareOutputPath(request.ManifestRootDir, name, ".bin");
-        File.WriteAllBytes(binPath, request.Bytes);
-        return $"incbin \"{RegionAssetExportService.JoinAsmPath(request.ManifestRefPrefix, $"{name}.bin")}\"";
+        // no structure to check -- any byte is a valid byte -- but an empty region describes
+        // nothing and would produce a manifest whose source slice is zero-length.
+        if (request.Bytes.Length == 0)
+            throw new InvalidOperationException(
+                $"Region '{request.Region.RegionName}' is empty; a binary asset needs at least one byte.");
     }
+
+    protected override AssetManifestBlock BuildTypeBlock(RegionAssetExportRequest request) =>
+        new()
+        {
+            TypeString = RegionAssetUtil.GetAssetType(request.Region),
+            BlockKey = "raw",
+            Block = new JsonObject { ["ext"] = EditableExtension },
+            Options = null,
+        };
 }
 
 /// <summary>

@@ -213,6 +213,25 @@ public class BuildFileGenerator
             ExtractDescription = "textpack extract $out",
             SharedFileOptionKeys = ["tbl"],
         },
+
+        // raw.* -> verbatim byte ranges via binpack, the same codec BRR uses -- a region marked
+        // for plain-binary export resolves to this type. The editable source IS the bytes, so
+        // its extension matches the compiled one; the two live in different tiers, so they never
+        // collide. Shares binpack's tool var with the audio binding (declared once).
+        new BuildToolBinding
+        {
+            TypePrefix = "raw.",
+            ToolVar = BinpackToolVar,
+            ToolFile = BinpackToolFile,
+            SourceExtension = ".bin",
+            CompiledExtension = ".bin",
+            CompileRule = "raw_compile",
+            ExtractRule = "raw_extract",
+            CompileCommand = $"python ${BinpackToolVar} compile --name $name $search_roots --out $out",
+            CompileDescription = "binpack compile $name",
+            ExtractCommand = ExtractCommandFor(BinpackToolVar),
+            ExtractDescription = "binpack extract $out",
+        },
     };
 
     /// <summary>
@@ -256,14 +275,19 @@ public class BuildFileGenerator
         File.WriteAllText(path, Templates.Load(ConfigFileName), new UTF8Encoding(false));
     }
 
-    /// <summary>Collect the asset regions that the build needs to rebuild.</summary>
+    /// <summary>
+    /// Collect the asset regions that the build needs to rebuild: every region that isn't
+    /// plain assembly. Plain-binary regions are included because they too are extracted from
+    /// the ROM and recompiled by a codec -- nothing in the exported tree carries their bytes,
+    /// so without a build edge there would be nothing to incbin.
+    /// </summary>
     public static IReadOnlyList<BuildAssetEntry> CollectAssets(IEnumerable<IRegion> regions) =>
         regions
-            .Where(r => r.ExportType == RegionExportType.Asset)
+            .Where(r => r.ExportType != RegionExportType.Assembly)
             .Select(r => new BuildAssetEntry
             {
                 Name = RegionAssetUtil.GetAssetName(r),
-                AssetType = r.AssetType,
+                AssetType = RegionAssetUtil.GetAssetType(r),
                 AssetOptions = r.AssetOptions,
             })
             .OrderBy(a => a.Name, StringComparer.Ordinal) // deterministic output => clean diffs
@@ -335,9 +359,14 @@ public class BuildFileGenerator
         // The shared tool is always declared: romcheck (the `verify` oracle) lives in it,
         // independent of which codec asset types the project uses.
         sb.AppendLine($"{SharedToolVar} = {s.ToolsDir}/{SharedToolFile}");
-        // Any codec binding that runs off its OWN script (not the shared one) declares its var here.
-        foreach (var binding in toolBindings.Where(b => b.ToolVar != SharedToolVar && b.ToolFile != null))
-            sb.AppendLine($"{binding.ToolVar} = {s.ToolsDir}/{binding.ToolFile}");
+        // Any codec binding that runs off its OWN script (not the shared one) declares its var
+        // here. Distinct, because several bindings may share one codec (binpack backs both the
+        // verbatim audio and raw types) and ninja would otherwise get the same assignment twice.
+        foreach (var (toolVar, toolFile) in toolBindings
+                     .Where(b => b.ToolVar != SharedToolVar && b.ToolFile != null)
+                     .Select(b => (b.ToolVar, b.ToolFile))
+                     .Distinct())
+            sb.AppendLine($"{toolVar} = {s.ToolsDir}/{toolFile}");
         sb.AppendLine($"main_asm = {s.MainAsmPath}");
         sb.AppendLine();
         sb.AppendLine("# Asset layer search path, highest priority first. Mod layers come from");

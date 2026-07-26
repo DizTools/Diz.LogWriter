@@ -21,10 +21,11 @@ namespace Diz.LogWriter.assets;
 /// Subclasses supply only the type-specific pieces: the compiled-payload extension, a
 /// validation pass, and the manifest's `type` string + typed block (e.g. gfx:{} / audio:{}).
 ///
-/// Dispatch is by AssetType PREFIX (e.g. "gfx.", "audio."), NOT by the RegionExportType enum:
-/// every manifest-writing asset shares ExportType == Asset, so the enum alone cannot tell gfx
-/// from audio. Routing on the prefix mirrors what the codec tools already do internally with
-/// their `type` field, and it does not touch the save format the way a new enum value would.
+/// Dispatch is by AssetType PREFIX (e.g. "gfx.", "audio."), not by the RegionExportType enum:
+/// asset regions share one ExportType, so the enum alone cannot tell gfx from audio. Routing on
+/// the prefix mirrors what the codec tools already do internally with their `type` field, and it
+/// does not touch the save format the way a new enum value would. A subclass may widen the claim
+/// (see CanExport) for a type an export-type shorthand can also select.
 /// </summary>
 public abstract class BinaryAssetExporterBase : IRegionAssetExporter
 {
@@ -56,7 +57,12 @@ public abstract class BinaryAssetExporterBase : IRegionAssetExporter
     /// </summary>
     protected abstract AssetManifestBlock BuildTypeBlock(RegionAssetExportRequest request);
 
-    public bool CanExport(IRegion region) =>
+    /// <summary>
+    /// Claim regions whose AssetType carries this exporter's prefix. Virtual because one asset
+    /// kind -- a verbatim byte range -- is also reachable from an ExportType that carries no
+    /// AssetType to dispatch on, and must widen the claim to cover it.
+    /// </summary>
+    public virtual bool CanExport(IRegion region) =>
         region.ExportType == RegionExportType.Asset &&
         region.AssetType?.StartsWith(AssetTypePrefix, StringComparison.Ordinal) == true;
 

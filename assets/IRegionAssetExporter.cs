@@ -3,9 +3,9 @@ using Diz.Core.Interfaces;
 namespace Diz.LogWriter.assets;
 
 /// <summary>
-/// Describes a region as a standalone asset -- normally by writing a manifest saying where
-/// its bytes live in the ROM and how to decode them -- and tells the assembly writer what
-/// directive to emit in place of the usual inline `db` bytes.
+/// Describes a region as a standalone asset -- by writing a manifest saying where its bytes
+/// live in the ROM and how to decode them -- and tells the assembly writer what directive to
+/// emit in place of the usual inline `db` bytes.
 ///
 /// Deliberately NOT responsible for pixel/palette encoding, and it does not copy the ROM
 /// bytes out either: the build slices them straight from the ROM using the manifest. An
@@ -24,8 +24,8 @@ public interface IRegionAssetExporter
     bool CanExport(IRegion region);
 
     /// <summary>
-    /// Write whatever files describe this asset (normally just its manifest) and return the
-    /// assembly directive line to emit in place of the region's inline bytes.
+    /// Write the manifest describing this asset and return the assembly directive line to
+    /// emit in place of the region's inline bytes.
     /// </summary>
     string Export(RegionAssetExportRequest request);
 }
@@ -59,11 +59,4 @@ public class RegionAssetExportRequest
     /// nothing Diz writes is what gets incbin'd.
     /// </summary>
     public string AssetRefPrefix { get; init; }
-
-    /// <summary>
-    /// Path prefix, relative to where the .asm lives, of <see cref="ManifestRootDir"/>. Only
-    /// needed by asset kinds that have no codec step and are therefore incbin'd straight out
-    /// of the generated tree.
-    /// </summary>
-    public string ManifestRefPrefix { get; init; }
 }

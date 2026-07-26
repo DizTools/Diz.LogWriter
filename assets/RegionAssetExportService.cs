@@ -89,10 +89,6 @@ public class RegionAssetExportService : IRegionAssetExportService
             PcOffset = pcOffset,
             ManifestRootDir = manifestRootDir,
             AssetRefPrefix = JoinAsmPath(asmToProjectRootPrefix, buildAssetDir),
-
-            // the manifest dir sits inside the .asm's own output tree, so from where the
-            // .asm lives it is reached without walking back to the project root.
-            ManifestRefPrefix = AssetSubDir,
         });
     }
 
