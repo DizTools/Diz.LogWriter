@@ -183,13 +183,23 @@ public class LogCreator : ILogCreatorForGenerator
         visitedDefines = new Dictionary<string, string>();
         RootRegions.Clear();
             
-        if (Settings.Unlabeled != LogWriterSettings.FormatUnlabeled.ShowNone)
+        // the asset-region label pass is independent of the "unlabeled" setting: it names real
+        // regions the user authored, not auto-discovered code/data. So the generator has to exist
+        // when EITHER kind of temporary label is wanted, and each pass is gated on its own.
+        // Minting is pointless when nothing will emit an incbin, so it also requires that assets
+        // are actually being exported.
+        var generateAssetLabels = Settings.GenerateAssetLabels && HasAssetRegionsToExport;
+        var generateUnlabeled = Settings.Unlabeled != LogWriterSettings.FormatUnlabeled.ShowNone;
+
+        if (generateUnlabeled || generateAssetLabels)
         {
             LogCreatorTempLabelGenerator = new LogCreatorTempLabelGenerator
             {
                 LogCreator = this,
                 GenerateAllUnlabeled = Settings.Unlabeled == LogWriterSettings.FormatUnlabeled.ShowAll,
-                ShouldGeneratePlusMinusLabels = Settings.GeneratePlusMinusLabels,
+                ShouldGenerateSectionLabels = generateUnlabeled,
+                ShouldGeneratePlusMinusLabels = generateUnlabeled && Settings.GeneratePlusMinusLabels,
+                ShouldGenerateAssetRegionLabels = generateAssetLabels,
             };
         }
 
@@ -212,6 +222,15 @@ public class LogCreator : ILogCreatorForGenerator
 
     public List<IAsmCreationStep> Steps { get; private set; }
 
+    // Will this export actually emit `incbin`s for asset-typed regions? Both the asset export
+    // steps and the asset-region label pass key off this single expression so they can never
+    // disagree about whether assets are being exported (labels for incbins that never happen
+    // would be dangling symbols). The OutputToString guard matters because that mode has no real
+    // output directory, and asset export writes actual files.
+    private bool HasAssetRegionsToExport =>
+        !Settings.OutputToString &&
+        (Data?.Data?.Regions?.Any(r => r.ExportType != RegionExportType.Assembly) ?? false);
+
     public void RegisterSteps()
     {
         // the following steps will be executed to generate the output disassembly files
@@ -229,9 +248,7 @@ public class LogCreator : ILogCreatorForGenerator
         // Self-activating: with no asset-typed regions everything below stays null/disabled
         // and output is byte-for-byte unchanged. The OutputToString guard matters because
         // that mode has no real output directory, and asset export writes actual files.
-        var regions = Data?.Data?.Regions?.ToList() ?? [];
-        var hasAssetRegions = !Settings.OutputToString &&
-                              regions.Any(r => r.ExportType != RegionExportType.Assembly);
+        var hasAssetRegions = HasAssetRegionsToExport;
 
         // Three different directories; conflating them is a data-loss bug:
         //   asmOutputDir   - .asm output (e.g. <project>/generated), REWRITTEN on every export.
@@ -515,6 +532,41 @@ public class LogCreator : ILogCreatorForGenerator
         WriteEmptyLine();
     }
         
+    /// <summary>
+    /// One-line header for a region emitted as an `incbin` of an asset. Everything after the
+    /// "; inc: " prefix is strict JSON, so tools can read the export back without parsing prose:
+    ///
+    ///   ; inc: {"name":"blob_039f41","type":"blob.container","off":"$039F41","snes":"$C39F41","len":1734}
+    ///
+    /// "len" is a number; the rest are strings. "snes" is "[invalid]" when the offset doesn't map
+    /// to a SNES address. No ORG comment is emitted: "snes" already carries that address, and an
+    /// ORG comment is inert either way.
+    ///
+    /// The multi-line "; --> Included ..." header (WriteHeaderForNewlyIncludedFile) still fronts
+    /// `incsrc`'d regions; only the asset path uses this compact form.
+    /// </summary>
+    public void WriteAssetIncludeHeaderLine(int offset, string name, string assetType, int sizeInBytes)
+    {
+        var snesAddress = Data.ConvertPCtoSnes(offset);
+        var formattedOffsetStr = RomUtil.ConvertNumToHexStr(offset, 3);
+        var formattedSnesAddrStr = snesAddress == -1 ? "[invalid]" : RomUtil.ConvertNumToHexStr(snesAddress, 3);
+
+        WriteLine(
+            "; inc: {" +
+            $"\"name\":{ToJsonString(name)}," +
+            $"\"type\":{ToJsonString(assetType)}," +
+            $"\"off\":{ToJsonString(formattedOffsetStr)}," +
+            $"\"snes\":{ToJsonString(formattedSnesAddrStr)}," +
+            $"\"len\":{sizeInBytes}" +
+            "}");
+    }
+
+    // Minimal JSON string literal: the two characters that would otherwise break out of the
+    // quotes. Region names are normally identifier-safe, so this never fires in practice -- it's
+    // here so a hand-named region can't produce a header line that won't parse.
+    private static string ToJsonString(string value) =>
+        $"\"{(value ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"")}\"";
+
     public void OnLabelVisited(int snesAddress) => LabelTracker.OnLabelVisited(snesAddress);
     public void OnInstructionVisited(int offset, CpuInstructionDataFormatted cpuInstructionDataFormatted)
     {
