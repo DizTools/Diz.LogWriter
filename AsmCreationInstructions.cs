@@ -6,6 +6,7 @@ using Diz.Core.Interfaces;
 using Diz.Core.model.snes;
 using Diz.Core.util;
 using Diz.Cpu._65816;
+using Diz.LogWriter.assemblyGenerators;
 using Diz.LogWriter.assets;
 using JetBrains.Annotations;
 
@@ -23,21 +24,21 @@ public class AsmCreationInstructions : AsmCreationBase
     public bool EnableRegionIncSrc { get; init; } = true;
 
     // Optional: when both are set, regions marked with an ExportType other than 'Assembly'
-    // have their bytes written out as standalone asset files and replaced in the .asm with
-    // an `incbin`. Left null, nothing changes and every region exports inline `db` bytes
-    // exactly as before.
+    // are described by a manifest instead of inline bytes, and replaced in the .asm with an
+    // `incbin` of the build's compiled output. Left null, nothing changes and every region
+    // exports inline `db` bytes exactly as before.
     [CanBeNull] public IRegionAssetExportService AssetExportService { get; init; }
 
-    // PROJECT root, not the assembly output dir -- assets are hand-edited source and must not
-    // live inside the tree that export rewrites.
-    [CanBeNull] public string AssetExportRootDir { get; init; }
+    // Where asset manifests are written: the "assets" folder inside the assembly output dir.
+    // Manifests are generated output and belong in the tree that export rewrites.
+    [CanBeNull] public string AssetManifestRootDir { get; init; }
 
     // relative path from the .asm's directory back to the project root (e.g. ".."), so the
     // emitted incbin resolves from wherever the .asm actually lives.
     public string AssetAsmToProjectRootPrefix { get; init; } = "";
 
     private bool AssetExportEnabled =>
-        AssetExportService != null && !string.IsNullOrEmpty(AssetExportRootDir);
+        AssetExportService != null && !string.IsNullOrEmpty(AssetManifestRootDir);
 
     // regions we've already emitted an incbin for, so a region can't be written twice
     private readonly HashSet<string> exportedAssetRegions = [];
@@ -558,19 +559,77 @@ public class AsmCreationInstructions : AsmCreationBase
                 $"PC 0x{startPc:X}-0x{endPc:X}); its bytes can't be read as one run. This happens " +
                 "at a LoROM bank seam -- split the region so it doesn't cross one.");
 
-        var directive = AssetExportService.ExportRegion(
-            region, AssetExportRootDir, AssetAsmToProjectRootPrefix);
-        if (directive == null)
+        var exported = AssetExportService.ExportRegion(
+            region, AssetManifestRootDir, AssetAsmToProjectRootPrefix);
+        if (exported == null)
             return false;
 
+        // Names to bracket the incbin with. These are exactly the names labels.asm would
+        // otherwise emit as `NAME = $XXXXXX` equates for this address, because the
+        // OnLabelVisited() below suppresses ALL of them at once. The emission and the visit are
+        // strictly coupled and must stay that way: visit without emitting and the symbol exists
+        // nowhere, so the assembler fails at its first reference; emit without visiting and
+        // labels.asm defines it a second time, so the assembler fails on the redefinition.
+        var labelNames = GetAssetRegionLabelNamesAt(region.StartSnesAddress);
+
         LogCreator.WriteEmptyLine();
-        LogCreator.WriteHeaderForNewlyIncludedFile(offset, "asset", region.RegionName, length);
-        LogCreator.WriteLine(directive);
+        LogCreator.WriteAssetIncludeHeaderLine(
+            offset, region.RegionName, GetAssetTypeNameForHeader(region), length);
+
+        foreach (var labelName in labelNames)
+            LogCreator.WriteLine($"{labelName}:");
+
+        LogCreator.WriteLine(exported.AsmDirective);
+
+        if (labelNames.Count > 0)
+        {
+            // End marker: plain output text, deliberately NEVER registered in the label store.
+            // The store holds one label per SNES address, and asset regions very often end
+            // exactly where the next one begins -- so an end label could not coexist with the
+            // next region's start label. Written straight into the text, the assembler resolves
+            // it to the program counter, which right after the incbin is start + len: exactly
+            // what `X__END - X` table math needs. The name pairs with whichever name came first
+            // above, so it reads the same whether that name was hand-authored or generated.
+            LogCreator.WriteLine($"{labelNames[0]}__END:");
+
+            // paired with the inline emission above -- see the comment on labelNames.
+            LogCreator.OnLabelVisited(region.StartSnesAddress);
+        }
+
         LogCreator.WriteEmptyLine();
 
         exportedAssetRegions.Add(region.RegionName);
         offset += length;
         return true;
+    }
+
+    /// <summary>
+    /// The "type" value for an asset region's header line: its codec contract when it declares
+    /// one, otherwise its export type's own name lowercased (e.g. "binary"), so the key is always
+    /// present and always says something true about the region.
+    /// </summary>
+    private static string GetAssetTypeNameForHeader(IRegion region) =>
+        !string.IsNullOrWhiteSpace(region.AssetType)
+            ? region.AssetType
+            : region.ExportType.ToString().ToLowerInvariant();
+
+    /// <summary>
+    /// Every label name that exists at an asset region's start address, read through the SAME
+    /// accessor the leftover-labels file uses -- so context-mapping name overrides are included
+    /// and the two can never disagree about which names live at this address.
+    /// Empty when asset labels are switched off, which restores the un-bracketed output.
+    /// </summary>
+    private List<string> GetAssetRegionLabelNamesAt(int snesAddress)
+    {
+        if (!LogCreator.Settings.GenerateAssetLabels)
+            return [];
+
+        var printableLabels =
+            AssemblyGenerateLabelAssign.GetPrintableLabelsDataAtSnesAddress(snesAddress, Data.Labels);
+
+        return printableLabels == null
+            ? []
+            : printableLabels.Select(x => x.Name).ToList();
     }
 
     [CanBeNull]

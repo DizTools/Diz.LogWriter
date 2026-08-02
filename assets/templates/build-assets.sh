@@ -4,7 +4,7 @@
 # Usage:
 #   ./build-assets.sh            build the ROM
 #   ./build-assets.sh verify     build and assert it matches the original ROM
-#   ./build-assets.sh seed       create any missing PNGs from the exported .bin seeds
+#   ./build-assets.sh extract    decode the original ROM into editable sources
 #
 # Mod layers: set `mod_roots` in build-config.ninja (user-owned; export never
 # overwrites it).

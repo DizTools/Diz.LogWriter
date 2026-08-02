@@ -6,8 +6,13 @@ change here will be overwritten.
 They live here so this repo can rebuild the ROM without DiztinGUIsh installed --
 the build depends on python and the vendored assembler, never on Diz.
 
-## Overriding a codec
+## Game-specific codecs
 
-Put your own version in `tools/game/`, which is searched first and is never
-touched by export. That's the place for game-specific codecs (custom compression,
-odd tile layouts) that shouldn't live in Diz.
+Some assets are packed in a format that belongs to one game -- a custom
+compression, say. Those codecs are not in this directory: they are copied to
+`tools/vendor/game/`, and only when this repo actually has an asset that needs
+one. That directory is generated too, on the same terms as this one.
+
+Editing a codec means editing it upstream and re-exporting. A copy left in this
+directory, or in `tools/vendor/game/`, is overwritten without warning; the build
+runs whatever export last put there.

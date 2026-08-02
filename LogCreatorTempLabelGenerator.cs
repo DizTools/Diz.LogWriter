@@ -1,4 +1,5 @@
 ﻿#nullable enable
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Diz.Core.Interfaces;
@@ -17,7 +18,13 @@ internal class LogCreatorTempLabelGenerator
     public required LogCreator LogCreator { get; init; }
     public ILogCreatorDataSource<IData> Data => LogCreator.Data;
     public bool GenerateAllUnlabeled { get; init; }
+    public bool ShouldGenerateSectionLabels { get; init; }
     public bool ShouldGeneratePlusMinusLabels { get; init; }
+    public bool ShouldGenerateAssetRegionLabels { get; init; }
+
+    // Prefix for a generated name at the start of a region exported as an asset. Only ever used
+    // where no project label exists at that address; a hand-authored name is always kept as-is.
+    private const string AssetLabelPrefix = "ASSET_";
 
 
     public void ClearTemporaryLabels()
@@ -29,12 +36,89 @@ internal class LogCreatorTempLabelGenerator
     public void GenerateTemporaryLabels()
     {
         // 1. all labels [like "CODE_xxxx" and "DATA_xxxx"] but not +/- labels
-        GenerateSectionTempLabels();
-        
+        if (ShouldGenerateSectionLabels)
+            GenerateSectionTempLabels();
+
         // 2. generate ONLY +/- labels
-        //    do this LAST because we'll selectively overwrite some types of labels (like "CODE_")
+        //    do this after the above because we'll selectively overwrite some types of labels (like "CODE_")
         if (ShouldGeneratePlusMinusLabels)
             GeneratePlusMinusLabels();
+
+        // 3. names for regions exported as assets (an incbin rather than inline bytes).
+        //    do this LAST, so it wins over the generic auto-generated names from the passes
+        //    above: a pointer into an asset region should render the asset's own name rather
+        //    than something like "DATA8_C39F41".
+        if (ShouldGenerateAssetRegionLabels)
+            GenerateAssetRegionLabels();
+    }
+
+    /// <summary>
+    /// Give every region that exports as an asset a name at its start address, so references to
+    /// it read as that name instead of a raw address.
+    ///
+    /// Generation only: where a project label already exists at the address, AddOrReplaceTemporaryLabel
+    /// declines to override it, and that hand-authored name is what the export ends up using --
+    /// which is the intent. Only unnamed asset regions get the generated "ASSET_" name.
+    /// </summary>
+    private void GenerateAssetRegionLabels()
+    {
+        var assetRegions = Data.Data.Regions?
+            .Where(region => region.ExportType != RegionExportType.Assembly)
+            .ToList();
+
+        if (assetRegions == null || assetRegions.Count == 0)
+            return;
+
+        // Every name already spoken for, so a generated one can never shadow an existing symbol.
+        // Complete at this point precisely because this pass runs last: every other temporary
+        // label already exists, and the merged view includes the project's own labels.
+        var namesInUse = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var (_, label) in Data.Labels.Labels)
+        {
+            namesInUse.Add(label.Name);
+            foreach (var contextMapping in label.ContextMappings)
+                namesInUse.Add(contextMapping.NameOverride);
+        }
+
+        foreach (var region in assetRegions)
+        {
+            var generatedName = $"{AssetLabelPrefix}{SanitizeForLabelName(region.RegionName)}";
+
+            if (namesInUse.Contains(generatedName))
+            {
+                // two symbols with one name is worse than no symbol: skip and say so, rather
+                // than emitting assembly that won't build.
+                LogCreator.OnErrorReported(Data.ConvertSnesToPc(region.StartSnesAddress),
+                    $"Asset region '{region.RegionName}' would be named '{generatedName}', but that " +
+                    "name is already used by another label. Skipping it; rename the region or the " +
+                    "conflicting label.");
+                continue;
+            }
+
+            Data.TemporaryLabelProvider.AddOrReplaceTemporaryLabel(
+                region.StartSnesAddress, new TempLabel { Name = generatedName });
+
+            // only reserve the name if it was actually taken -- an existing project label at this
+            // address makes the call above a no-op, and nothing new was introduced.
+            if (Data.TemporaryLabelProvider.GetLabel(region.StartSnesAddress)?.Name == generatedName)
+                namesInUse.Add(generatedName);
+        }
+    }
+
+    /// <summary>
+    /// Reduce a region name to something an assembler will take as a label: anything outside
+    /// [A-Za-z0-9_] becomes '_', and a leading digit gets an underscore in front of it. Most
+    /// region names are already identifier-safe and pass through untouched.
+    /// </summary>
+    private static string SanitizeForLabelName(string? regionName)
+    {
+        var sanitized = new string((regionName ?? "")
+            .Select(c => char.IsAsciiLetterOrDigit(c) || c == '_' ? c : '_')
+            .ToArray());
+
+        return sanitized.Length > 0 && char.IsAsciiDigit(sanitized[0])
+            ? "_" + sanitized
+            : sanitized;
     }
 
     private void GenerateSectionTempLabels()

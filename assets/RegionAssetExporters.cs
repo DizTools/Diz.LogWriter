@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Security.Cryptography;
@@ -34,6 +35,24 @@ public static class RegionAssetUtil
         return full;
     }
 
+    /// <summary>
+    /// Asset type of a region that declares none: a verbatim byte range with no interpretation,
+    /// handled by the generic passthrough codec. The dotted head ("raw") is also the manifest's
+    /// typed-block key, which is how the codec finds it.
+    /// </summary>
+    public const string RawAssetType = "raw.bin";
+
+    /// <summary>
+    /// The manifest "type" for a region. Plain-binary regions have no AssetType to author -- the
+    /// field only exists for typed assets -- so they resolve to <see cref="RawAssetType"/>.
+    /// Returns null for a typed asset region with no type, so that stays a loud failure rather
+    /// than quietly becoming a raw blob.
+    /// </summary>
+    public static string GetAssetType(IRegion region) =>
+        !string.IsNullOrWhiteSpace(region.AssetType) ? region.AssetType
+        : region.ExportType == RegionExportType.Binary ? RawAssetType
+        : null;
+
     public static string Sha256Hex(byte[] bytes) =>
         Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
 
@@ -65,33 +84,70 @@ public static class RegionAssetUtil
 }
 
 /// <summary>
-/// Plain binary export: write the bytes to a .bin and emit `incbin`.
-/// No interpretation of the contents at all.
+/// Plain binary export: a verbatim byte range with no interpretation of the contents at all.
+///
+/// This is an ordinary asset, not a special case: it writes a manifest and nothing else, exactly
+/// like gfx / BRR / text, and the bytes are extracted from the ROM and recompiled by the same
+/// generic passthrough codec BRR uses (`binpack`). Nothing is written into the generated tree
+/// but the manifest, so a raw region can be extracted, forked, overridden by a mod layer, and
+/// regression-tested by the build like every other asset.
+///
+/// It is reached two ways, which is why it widens the base's prefix dispatch. Setting a region's
+/// export type to plain binary is the UI affordance: such a region carries no AssetType (that
+/// field is only authored for typed assets), so the type "raw.bin" is synthesized for it. Naming
+/// the type explicitly on a typed asset region works too and routes here identically.
+///
+/// The editable source is the raw bytes themselves, so its extension is ".bin" -- the same as
+/// CompiledExtension. Those are different files in different tiers (extracted/&lt;name&gt;.bin
+/// vs build/assets/&lt;name&gt;.bin), so there is no collision; the round trip is a byte copy.
 /// </summary>
-public class BinaryRegionAssetExporter : IRegionAssetExporter
+public class BinaryRegionAssetExporter : BinaryAssetExporterBase
 {
-    public bool CanExport(IRegion region) => region.ExportType == RegionExportType.Binary;
+    protected override string AssetTypePrefix => "raw.";
 
-    public string Export(RegionAssetExportRequest request)
+    protected override string CompiledExtension => ".bin";
+
+    // what `binpack extract` decodes to and `binpack compile` reads back, recorded in the
+    // manifest so the ninja rules pass no --ext. Identical to the compiled extension here
+    // because a verbatim asset has no lossy editable view.
+    private const string EditableExtension = ".bin";
+
+    // plain-binary regions have no AssetType, so the base's prefix dispatch cannot see them;
+    // claim the export type directly and let the base handle an explicitly-typed "raw." asset.
+    public override bool CanExport(IRegion region) =>
+        region.ExportType == RegionExportType.Binary || base.CanExport(region);
+
+    protected override void Validate(RegionAssetExportRequest request)
     {
-        var name = RegionAssetUtil.GetAssetName(request.Region);
-        var binPath = RegionAssetUtil.PrepareOutputPath(request.AssetRootDir, name, ".bin");
-        File.WriteAllBytes(binPath, request.Bytes);
-        return $"incbin \"{request.AssetRefPrefix}/{name}.bin\"";
+        // no structure to check -- any byte is a valid byte -- but an empty region describes
+        // nothing and would produce a manifest whose source slice is zero-length.
+        if (request.ByteLength == 0)
+            throw new InvalidOperationException(
+                $"Region '{request.Region.RegionName}' is empty; a binary asset needs at least one byte.");
     }
+
+    protected override AssetManifestBlock BuildTypeBlock(RegionAssetExportRequest request) =>
+        new()
+        {
+            TypeString = RegionAssetUtil.GetAssetType(request.Region),
+            BlockKey = "raw",
+            Block = new JsonObject { ["ext"] = EditableExtension },
+            Options = null,
+        };
 }
 
 /// <summary>
-/// Asset export: write the raw .bin AND a manifest describing how to decode it, so an
-/// external tool can turn it into an editable PNG and back.
+/// Asset export: write a manifest describing where the bytes are and how to decode them, so
+/// an external tool can turn them into an editable PNG and back.
 ///
-/// The .bin is what the assembler consumes, so the build stays correct even before anyone
-/// runs the codec tool; the PNG is generated from the .bin as a separate, later step.
+/// The bytes are not copied out here. The build's `extract` step slices them from the ROM
+/// using this manifest and decodes them into an editable PNG; compiling that PNG produces
+/// the .bin the assembler incbin's.
 /// </summary>
 public class GfxRegionAssetExporter : BinaryAssetExporterBase
 {
     protected override string AssetTypePrefix => "gfx.";
-    protected override string FileExtension => ".bin";
+    protected override string CompiledExtension => ".bin";
 
     // must match gfxpack's default (--layout-width). the manifest records it explicitly
     // anyway, so the two can't silently disagree.
@@ -101,7 +157,7 @@ public class GfxRegionAssetExporter : BinaryAssetExporterBase
     {
         var region = request.Region;
         var (bpp, cellHeight, cellSize, _) = ComputeLayout(region);
-        var length = request.Bytes.Length;
+        var length = request.ByteLength;
 
         if (length == 0 || length % cellSize != 0)
         {
@@ -124,7 +180,7 @@ public class GfxRegionAssetExporter : BinaryAssetExporterBase
     {
         var region = request.Region;
         var (bpp, cellHeight, cellSize, options) = ComputeLayout(region);
-        var tiles = request.Bytes.Length / cellSize;
+        var tiles = request.ByteLength / cellSize;
 
         var gfx = new JsonObject
         {
@@ -222,13 +278,14 @@ public class GfxRegionAssetExporter : BinaryAssetExporterBase
 ///
 /// BRR needs NO codec: a .brr file IS the raw ADPCM stream, so the round-trip is a verbatim
 /// byte copy handled by the vendored `binpack.py`, not a planar encoder. What Diz writes here
-/// is the same shape as gfx: a verbatim `.bin` SEED plus a manifest. `binpack seed` turns the
-/// seed into the editable `.brr` payload (the manifest's `audio.ext` tells it which extension);
-/// `binpack compile` turns that `.brr` back into `build/assets/audio/&lt;name&gt;.bin`, which is
-/// what the assembler `incbin`s. So FileExtension is ".bin" here (the seed + incbin target),
-/// NOT ".brr" -- ".brr" is the EDITABLE-source extension, carried by the manifest's `audio.ext`
-/// block and the audio BuildToolBinding.SourceExtension. This mirrors gfx exactly, where
-/// FileExtension is ".bin" and the editable extension (".png") lives in the binding.
+/// is the same shape as gfx: a manifest, and nothing else. `binpack extract` slices the ROM
+/// per that manifest into the editable `.brr` payload (the manifest's `audio.ext` tells it
+/// which extension); `binpack compile` turns that `.brr` back into
+/// `build/assets/audio/&lt;name&gt;.bin`, which is what the assembler `incbin`s. So
+/// CompiledExtension is ".bin" here, NOT ".brr" -- ".brr" is the EDITABLE-source extension,
+/// carried by the manifest's `audio.ext` block and the audio BuildToolBinding.SourceExtension.
+/// This mirrors gfx exactly, where CompiledExtension is ".bin" and the editable extension
+/// (".png") lives in the binding.
 ///
 /// The asset region covers ONLY the BRR stream itself. Some games store each sample with a
 /// small length/header prefix immediately before the BRR stream; that prefix belongs to the
@@ -240,16 +297,16 @@ public class BrrRegionAssetExporter : BinaryAssetExporterBase
 {
     protected override string AssetTypePrefix => "audio.";
 
-    // the SEED + incbin-target extension (see class doc). NOT the editable extension.
-    protected override string FileExtension => ".bin";
+    // the incbin-target extension (see class doc). NOT the editable extension.
+    protected override string CompiledExtension => ".bin";
 
-    // the editable payload's extension: what `binpack` compiles from. Recorded in the manifest
-    // so the vendored codec resolves it without the ninja rule having to pass --ext.
+    // the editable payload's extension: what `binpack` extracts to and compiles from. Recorded
+    // in the manifest so the vendored codec resolves it without the ninja rule passing --ext.
     private const string EditableExtension = ".brr";
 
     protected override void Validate(RegionAssetExportRequest request)
     {
-        var length = request.Bytes.Length;
+        var length = request.ByteLength;
 
         // BRR (SNES ADPCM) is a stream of 9-byte blocks (1 header + 8 data). Anything not a
         // whole number of blocks is a mis-drawn region -- fail LOUDLY naming it, rather than
@@ -271,12 +328,199 @@ public class BrrRegionAssetExporter : BinaryAssetExporterBase
             TypeString = request.Region.AssetType,
             BlockKey = "audio",
 
-            // matches what `binpack extract` writes for a verbatim asset: the block records only
-            // the editable extension. binpack reads `audio.ext` to find the .brr payload.
+            // the block records only the editable extension; binpack reads `audio.ext` to know
+            // what to extract to and what to compile from.
             Block = new JsonObject { ["ext"] = EditableExtension },
 
             // BRR has no option vocabulary Diz interprets; leave options off entirely (the base
             // omits the key when null).
             Options = null,
         };
+}
+
+/// <summary>
+/// Asset export for CT's fixed-width name tables (text.ct.mapped and kin) -- item names, tech
+/// names, menu strings: one byte per glyph, no terminator, each record padded to a fixed width.
+/// Dispatched by the "text." AssetType prefix (BinaryAssetExporterBase.CanExport), exactly like
+/// gfx is by "gfx." and BRR by "audio.".
+///
+/// Like gfx and BRR, Diz writes only a manifest and never decodes the text itself. The
+/// vendored `textpack.py` slices the ROM per that manifest into an editable `.yaml`
+/// (`textpack extract`) and turns that `.yaml` back into `build/assets/text/&lt;name&gt;.bin`
+/// (`textpack compile`), which the assembler `incbin`s. So CompiledExtension is ".bin", NOT
+/// ".yaml" -- the editable extension lives in the text BuildToolBinding, mirroring gfx (.png)
+/// and BRR (.brr).
+///
+/// The type-specific manifest fields Diz cannot derive from the bytes -- the character table
+/// (`tbl`), the record width, the pad byte, and the named-token map (equipment icons / control
+/// codes) -- are authored per-region in Region.AssetOptions, the same free-form escape hatch gfx
+/// uses for `cell_h`. Diz reads them, computes `count` from the region length, and writes the
+/// `text` block in the key order textpack's load_manifest expects. textpack is the authority on
+/// their meaning and validates them again at build time (an unknown manifest version is a hard
+/// error there, never a silent guess), so a mismatch fails loudly rather than emitting wrong bytes.
+/// </summary>
+public class TextRegionAssetExporter : BinaryAssetExporterBase
+{
+    protected override string AssetTypePrefix => "text.";
+
+    // the incbin-target extension (see class doc). NOT the editable ".yaml".
+    protected override string CompiledExtension => ".bin";
+
+    protected override void Validate(RegionAssetExportRequest request)
+    {
+        var region = request.Region;
+        var recordWidth = GetRecordWidth(ParseAssetOptions(region), region);
+        var length = request.ByteLength;
+
+        // Fixed-width records with no terminator: the region must be a whole number of them, or
+        // every record past the ragged point is mis-framed. Fail LOUDLY naming the region rather
+        // than shipping a name table shifted by a few bytes.
+        if (length == 0 || length % recordWidth != 0)
+            throw new InvalidOperationException(
+                $"Region '{region.RegionName}' is {length} bytes, which is not a whole number of " +
+                $"{recordWidth}-byte records. Adjust the region bounds (or the record_width in " +
+                "Asset Options) so it covers complete records.");
+    }
+
+    /// <summary>
+    /// The character table is the one input the manifest only NAMES rather than contains, so the
+    /// build has to know about it: editing the table must re-decode the text, or the build keeps
+    /// serving text rendered with the old glyph map.
+    /// </summary>
+    protected override IReadOnlyList<string> BuildSharedFiles(RegionAssetExportRequest request)
+    {
+        var region = request.Region;
+        return [GetRequiredString(ParseAssetOptions(region), "tbl", region)];
+    }
+
+    protected override AssetManifestBlock BuildTypeBlock(RegionAssetExportRequest request)
+    {
+        var region = request.Region;
+        var options = ParseAssetOptions(region);
+        var recordWidth = GetRecordWidth(options, region);
+        var count = request.ByteLength / recordWidth;
+
+        // Key order matches what textpack's `load_manifest` reads, so the tracked manifest
+        // stays byte-stable: tbl, count, record_width, pad, [tokens].
+        var text = new JsonObject
+        {
+            ["tbl"] = GetRequiredString(options, "tbl", region),
+            ["count"] = count,
+            ["record_width"] = recordWidth,
+            ["pad"] = GetPad(options, region),
+        };
+        var tokens = GetTokens(options, region);
+        if (tokens != null)
+            text["tokens"] = tokens;
+
+        return new AssetManifestBlock
+        {
+            // authored verbatim into the manifest and read by textpack; Diz never decodes it.
+            TypeString = region.AssetType,
+            BlockKey = "text",
+            Block = text,
+            // every option is consumed into the text block above; nothing passes through to a
+            // separate "options" key.
+            Options = null,
+        };
+    }
+
+    /// <summary>
+    /// Parse Region.AssetOptions into the required options object. Unlike gfx -- where options are
+    /// optional and only carry cell_h -- a text asset CANNOT be described without them: the table,
+    /// width, and pad byte have no defaults Diz could invent. So an empty AssetOptions is a hard
+    /// error that names what's missing, not a silent fallback.
+    /// </summary>
+    private static JsonObject ParseAssetOptions(IRegion region)
+    {
+        var raw = region.AssetOptions;
+        if (string.IsNullOrWhiteSpace(raw))
+            throw new InvalidOperationException(
+                $"Region '{region.RegionName}' is a text asset but has no Asset Options. Text " +
+                "assets require at least " +
+                "{\"tbl\": \"text/<table>.tbl\", \"record_width\": N, \"pad\": \"0xNN\"} " +
+                "(plus an optional \"tokens\" map).");
+
+        JsonNode parsed;
+        try
+        {
+            parsed = JsonNode.Parse(raw);
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException(
+                $"Region '{region.RegionName}': Asset Options is not valid JSON: {ex.Message}", ex);
+        }
+
+        if (parsed is not JsonObject obj)
+            throw new InvalidOperationException(
+                $"Region '{region.RegionName}': Asset Options must be a JSON object, not a " +
+                $"{parsed?.GetValueKind().ToString() ?? "null"}.");
+
+        return obj;
+    }
+
+    private static int GetRecordWidth(JsonObject options, IRegion region)
+    {
+        if (!options.TryGetPropertyValue("record_width", out var node) || node == null ||
+            node.GetValueKind() != JsonValueKind.Number || !node.AsValue().TryGetValue<int>(out var width))
+            throw new InvalidOperationException(
+                $"Region '{region.RegionName}': Asset Options must set an integer \"record_width\".");
+        if (width < 1)
+            throw new InvalidOperationException(
+                $"Region '{region.RegionName}': record_width must be >= 1, got {width}.");
+        return width;
+    }
+
+    private static string GetRequiredString(JsonObject options, string key, IRegion region)
+    {
+        if (!options.TryGetPropertyValue(key, out var node) || node == null ||
+            node.GetValueKind() != JsonValueKind.String)
+            throw new InvalidOperationException(
+                $"Region '{region.RegionName}': Asset Options must set a string \"{key}\".");
+        var value = node.GetValue<string>();
+        if (string.IsNullOrWhiteSpace(value))
+            throw new InvalidOperationException(
+                $"Region '{region.RegionName}': Asset Options \"{key}\" must not be empty.");
+        return value;
+    }
+
+    /// <summary>
+    /// The pad byte, verbatim as authored (e.g. "0xEF"). Validated as a byte literal here so a
+    /// typo fails at export, not at build time -- textpack checks it again as the authority.
+    /// </summary>
+    private static string GetPad(JsonObject options, IRegion region)
+    {
+        var pad = GetRequiredString(options, "pad", region);
+        if (!TryParseByteLiteral(pad, out _))
+            throw new InvalidOperationException(
+                $"Region '{region.RegionName}': Asset Options \"pad\" must be a byte literal like " +
+                $"\"0xEF\" (0..255), got \"{pad}\".");
+        return pad;
+    }
+
+    private static bool TryParseByteLiteral(string s, out int value)
+    {
+        s = s.Trim();
+        var ok = s.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+            ? int.TryParse(s.AsSpan(2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out value)
+            : int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+        return ok && value is >= 0 and <= 0xFF;
+    }
+
+    /// <summary>
+    /// The optional named-token map (equipment icons / control codes), deep-cloned so it detaches
+    /// from the parsed options tree before it's grafted into the manifest (a JsonNode can't have
+    /// two parents). Null when absent -- the block simply omits "tokens".
+    /// </summary>
+    private static JsonObject GetTokens(JsonObject options, IRegion region)
+    {
+        if (!options.TryGetPropertyValue("tokens", out var node) || node == null)
+            return null;
+        if (node is not JsonObject tokens)
+            throw new InvalidOperationException(
+                $"Region '{region.RegionName}': Asset Options \"tokens\" must be an object of " +
+                $"NAME -> \"0xNN\", not a {node.GetValueKind()}.");
+        return tokens.DeepClone().AsObject();
+    }
 }

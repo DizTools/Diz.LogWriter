@@ -9,6 +9,7 @@ asar = asar
 out_rom = output/rebuilt.sfc
 # original ROM for 'ninja verify' byte-identity check
 orig_rom = output/original.sfc
-# optional extra asset layers searched BEFORE assets/src, e.g.:
-#   mod_roots = --search assets/mymod
+# optional extra asset layers searched BEFORE the hand-authored assets/ layer, e.g.:
+#   mod_roots = --search mods/mymod
+# a layer must contain BOTH an asset's manifest and its content to override it.
 mod_roots =
